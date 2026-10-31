@@ -98,7 +98,7 @@ pub unsafe extern "C" fn twui_set_fonts(
                     solid_resource: 1_000_000,
                     atlas_resource: 1_000_001,
                 },
-                tilewright_render_ui::UiLimits::default(),
+                tilewright_ui_render::UiLimits::default(),
             )
             .map_err(|_| INVALID_ARGUMENT)?;
             engine.renderer = Some(renderer);
@@ -331,7 +331,7 @@ mod tests {
             std::env::var_os("TILEWRIGHT_UI_FONT_ROOT")
                 .expect("explicit verified test font root required"),
         );
-        let entries = tilewright_render_ui::unicode_fonts::FONTS;
+        let entries = tilewright_ui_render::unicode_fonts::FONTS;
         let bytes: Vec<Vec<u8>> = entries
             .iter()
             .map(|font| {
