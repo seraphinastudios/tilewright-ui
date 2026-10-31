@@ -30,6 +30,7 @@ test('real Chromium executes shared WASM state and renderer backends', {timeout:
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     const result = await page.evaluate(async () => {
       const {createUi,createWorld} = await import('./load.mjs');
+      const {ClipboardRead} = await import('./clipboard.mjs');
       const app = await createUi(); app.focus(true);
       const state=()=>JSON.parse(app.snapshot());
       const replace=text=>{const s=state();app.replace(text,text.length,text.length,s.generation,s.control.epoch,s.textRevision);};
@@ -47,6 +48,10 @@ test('real Chromium executes shared WASM state and renderer backends', {timeout:
       const acknowledged=app.peek_actions()==='null';
       replace('old'); const stale=state(); replace('new');
       const staleRejected=rejects(()=>app.replace('overwrite',9,9,stale.generation,stale.control.epoch,stale.textRevision));
+      const clipboard=new ClipboardRead();let complete;
+      const pending=clipboard.paste(app,{readText:()=>new Promise(resolve=>{complete=resolve;})});
+      replace('newer');complete('stale paste');
+      let clipboardRejected=false;try{await pending;}catch{clipboardRejected=state().text==='newer';}
       const frame=app.prepare(640,360,1);
       const uncommitted=rejects(()=>app.validate_displayed(frame)); app.ack_presented(frame); app.validate_displayed(frame);
       app.invalidate_surface(); const retired=rejects(()=>app.ack_presented(frame));
@@ -58,7 +63,7 @@ test('real Chromium executes shared WASM state and renderer backends', {timeout:
         const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;document.body.append(canvas);
         const world=await createWorld(canvas,640,360,backend);world.render(640,360);backends.push(world.backend());world.free();canvas.remove();
       }
-      app.free(); return {invalidSurrogateOffset,atomicInvalid,malformedString,composingDoesNotSubmit,stablePeek,acknowledged,staleRejected,uncommitted,retired,backpressure,cancellation,backends};
+      app.free(); return {invalidSurrogateOffset,atomicInvalid,malformedString,composingDoesNotSubmit,stablePeek,acknowledged,staleRejected,clipboardRejected,uncommitted,retired,backpressure,cancellation,backends};
     });
     for (const [name,value] of Object.entries(result)) if(name!=='backends') assert.equal(value,true,name);
     assert.equal(result.backends.length,2); assert.deepEqual(errors,[]);
