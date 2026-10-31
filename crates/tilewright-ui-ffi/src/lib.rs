@@ -121,6 +121,44 @@ pub struct Viewport {
     pub reserved2: u32,
 }
 
+/// Host attachment in logical coordinates. No existing ABI POD is extended.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Layout {
+    pub struct_size: u32,
+    pub reserved: u32,
+    pub viewport_width: f32,
+    pub viewport_height: f32,
+    pub viewport_scale: f32,
+    pub bounds_x: f32,
+    pub bounds_y: f32,
+    pub bounds_width: f32,
+    pub bounds_height: f32,
+    pub clip_x: f32,
+    pub clip_y: f32,
+    pub clip_width: f32,
+    pub clip_height: f32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct WidgetRef {
+    pub struct_size: u32,
+    pub reserved: u32,
+    pub widget_id: u64,
+    pub widget_generation: u64,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct FieldAction {
+    pub struct_size: u32,
+    pub kind: u32,
+    pub batch_id: u64,
+    pub text_bytes: u64,
+    pub widget_id: u64,
+    pub widget_generation: u64,
+    pub text_revision: u64,
+}
+
 #[cfg(feature = "cpu-prototype")]
 mod render;
 struct Engine {
@@ -208,18 +246,22 @@ unsafe fn copy_bytes(
     Ok(())
 }
 unsafe fn input_text(input: &Input, maximum: usize) -> Result<String> {
-    let len = usize::try_from(input.text_len).map_err(|_| LIMIT_EXCEEDED)?;
+    // SAFETY: caller supplies the documented input span.
+    unsafe { span_text(input.text, input.text_len, maximum) }
+}
+unsafe fn span_text(text: *const u8, length: u64, maximum: usize) -> Result<String> {
+    let len = usize::try_from(length).map_err(|_| LIMIT_EXCEEDED)?;
     if len > maximum || len > isize::MAX as usize {
         return Err(LIMIT_EXCEEDED);
     }
     if len == 0 {
         return Ok(String::new());
     }
-    if input.text.is_null() {
+    if text.is_null() {
         return Err(INVALID_ARGUMENT);
     }
     // SAFETY: caller guarantees the readable nonaliasing span for this call.
-    let bytes = unsafe { std::slice::from_raw_parts(input.text, len) };
+    let bytes = unsafe { std::slice::from_raw_parts(text, len) };
     std::str::from_utf8(bytes)
         .map(str::to_owned)
         .map_err(|_| INVALID_ARGUMENT)
@@ -352,6 +394,16 @@ fn viewport_from_c(value: Viewport) -> Result<tilewright_app::Viewport> {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_create(config: *const Config, output: *mut *mut Context) -> u32 {
+    // SAFETY: forwarded pointers retain the caller's documented obligations.
+    unsafe { twui_create_with_composition(config, 0, output) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twui_create_with_composition(
+    config: *const Config,
+    composition: u32,
+    output: *mut *mut Context,
+) -> u32 {
     if output.is_null() {
         return INVALID_ARGUMENT;
     }
@@ -363,6 +415,12 @@ pub unsafe extern "C" fn twui_create(config: *const Config, output: *mut *mut Co
         if config.abi_version != ABI_VERSION {
             return Err(ABI_MISMATCH);
         }
+        let composition = match composition {
+            0 => tilewright_ui::Composition::Demo,
+            1 => tilewright_ui::Composition::ChatPanel,
+            2 => tilewright_ui::Composition::SingleField,
+            _ => return Err(INVALID_ARGUMENT),
+        };
         // Explicit allocation/work bounds for this prototype C surface.
         if [
             config.message_bytes,
@@ -377,14 +435,17 @@ pub unsafe extern "C" fn twui_create(config: *const Config, output: *mut *mut Co
         {
             return Err(LIMIT_EXCEEDED);
         }
-        let app = App::new(tilewright_ui::Limits {
-            message_bytes: config.message_bytes as usize,
-            history_messages: config.history_messages as usize,
-            history_bytes: config.history_bytes as usize,
-            composer_bytes: config.composer_bytes as usize,
-            queued_batches: config.queued_batches as usize,
-            prepared_frames: config.prepared_frames as usize,
-        })
+        let app = App::with_composition(
+            tilewright_ui::Limits {
+                message_bytes: config.message_bytes as usize,
+                history_messages: config.history_messages as usize,
+                history_bytes: config.history_bytes as usize,
+                composer_bytes: config.composer_bytes as usize,
+                queued_batches: config.queued_batches as usize,
+                prepared_frames: config.prepared_frames as usize,
+            },
+            composition,
+        )
         .map_err(app_error)?;
         let context = Box::new(Context {
             owner: thread::current().id(),
@@ -632,10 +693,13 @@ pub unsafe extern "C" fn twui_peek_action(context: *mut Context, output: *mut Ac
         with_context(context, |app| {
             check_size(output)?;
             let batch = app.ui().peek_actions().ok_or(EMPTY)?;
-            let tilewright_ui::Action::SubmitChat { text } = &batch.actions[0];
+            let (kind, text) = match &batch.actions[0] {
+                tilewright_ui::Action::SubmitChat { text } => (1, text),
+                tilewright_ui::Action::SubmitField { text, .. } => (2, text),
+            };
             output.write(Action {
                 struct_size: size_of::<Action>() as u32,
-                kind: 1,
+                kind,
                 batch_id: batch.id.get(),
                 text_bytes: text.len() as u64,
             });
@@ -658,11 +722,130 @@ pub unsafe extern "C" fn twui_copy_action(
             if batch.id.get() != batch_id {
                 return Err(STALE);
             }
-            let tilewright_ui::Action::SubmitChat { text } = &batch.actions[0];
+            let text = match &batch.actions[0] {
+                tilewright_ui::Action::SubmitChat { text }
+                | tilewright_ui::Action::SubmitField { text, .. } => text,
+            };
             copy_bytes(text.as_bytes(), buffer, capacity, required)
         })
     }
 }
+/// Read identity for the oldest field action without acknowledging it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twui_get_field_action(
+    context: *mut Context,
+    batch_id: u64,
+    output: *mut FieldAction,
+) -> u32 {
+    // SAFETY: all foreign pointers obey the public ABI contract.
+    unsafe {
+        with_context(context, |app| {
+            check_size(output)?;
+            let batch = app.ui().peek_actions().ok_or(EMPTY)?;
+            if batch.id.get() != batch_id {
+                return Err(STALE);
+            }
+            let tilewright_ui::Action::SubmitField {
+                widget,
+                revision,
+                text,
+            } = &batch.actions[0]
+            else {
+                return Err(INVALID_ARGUMENT);
+            };
+            output.write(FieldAction {
+                struct_size: size_of::<FieldAction>() as u32,
+                kind: 2,
+                batch_id,
+                text_bytes: text.len() as u64,
+                widget_id: widget.id.get(),
+                widget_generation: widget.generation.get(),
+                text_revision: revision.get(),
+            });
+            Ok(())
+        })
+    }
+}
+
+/// Rebind the single-field slot and return its new identity atomically.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twui_bind_field(
+    context: *mut Context,
+    text: *const u8,
+    length: u64,
+    output: *mut WidgetRef,
+) -> u32 {
+    // SAFETY: all foreign pointers obey the public ABI contract.
+    unsafe {
+        with_context(context, |app| {
+            check_size(output)?;
+            let text = span_text(text, length, app.ui().limits().composer_bytes)?;
+            app.bind_field(text).map_err(app_error)?;
+            let widget = app.ui().snapshot().composer_widget;
+            output.write(WidgetRef {
+                struct_size: size_of::<WidgetRef>() as u32,
+                reserved: 0,
+                widget_id: widget.id.get(),
+                widget_generation: widget.generation.get(),
+            });
+            Ok(())
+        })
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twui_set_layout(context: *mut Context, layout: *const Layout) -> u32 {
+    // SAFETY: all foreign pointers obey the public ABI contract.
+    unsafe {
+        with_context(context, |app| {
+            let layout = read_sized(layout)?;
+            if layout.reserved != 0 {
+                return Err(INVALID_ARGUMENT);
+            }
+            let viewport = tilewright_app::Viewport {
+                width: layout.viewport_width,
+                height: layout.viewport_height,
+                scale: layout.viewport_scale,
+            };
+            let bounds = tilewright_ui::Rect {
+                x: layout.bounds_x,
+                y: layout.bounds_y,
+                width: layout.bounds_width,
+                height: layout.bounds_height,
+            };
+            let clip = tilewright_ui::Rect {
+                x: layout.clip_x,
+                y: layout.clip_y,
+                width: layout.clip_width,
+                height: layout.clip_height,
+            };
+            app.set_layout(viewport, bounds, clip).map_err(app_error)?;
+            #[cfg(feature = "cpu-prototype")]
+            {
+                let surface = app.surface_epoch();
+                app.frames.retain(|frame| frame.stamp.surface == surface);
+            }
+            Ok(())
+        })
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twui_prepare_current(context: *mut Context, output: *mut Stamp) -> u32 {
+    // SAFETY: all foreign pointers obey the public ABI contract.
+    unsafe {
+        with_context(context, |app| {
+            check_size(output)?;
+            let frame = app.prepare_current().map_err(app_error)?;
+            #[cfg(feature = "cpu-prototype")]
+            app.frames
+                .retain(|value| value.stamp.surface == frame.stamp.surface);
+            output.write(stamp_to_c(frame.stamp));
+            Ok(())
+        })
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_ack_action(context: *mut Context, batch_id: u64) -> u32 {
     // SAFETY: context obeys the public ABI contract.

@@ -104,7 +104,7 @@ typedef struct twui_control {
     uint64_t epoch, widget_id, widget_generation;
 } twui_control;
 typedef struct twui_action {
-    uint32_t struct_size, kind; /* kind 1 = submit chat */
+    uint32_t struct_size, kind; /* TWUI_ACTION_* */
     uint64_t batch_id, text_bytes;
 } twui_action;
 typedef struct twui_stamp {
@@ -117,9 +117,46 @@ typedef struct twui_viewport {
     uint32_t reserved2;
 } twui_viewport;
 
+/* Opt-in composition is immutable for the lifetime of a context. Legacy create
+ * always selects DEMO. Embedded modes never grant world input from a pointer
+ * hit; points outside their bounds and clips remain consumed. */
+#define TWUI_COMPOSITION_DEMO UINT32_C(0)
+#define TWUI_COMPOSITION_CHAT_PANEL UINT32_C(1)
+#define TWUI_COMPOSITION_SINGLE_FIELD UINT32_C(2)
+#define TWUI_ACTION_SUBMIT_CHAT UINT32_C(1)
+#define TWUI_ACTION_SUBMIT_FIELD UINT32_C(2)
+typedef struct twui_layout {
+    uint32_t struct_size, reserved;
+    float viewport_width, viewport_height, viewport_scale;
+    float bounds_x, bounds_y, bounds_width, bounds_height;
+    float clip_x, clip_y, clip_width, clip_height;
+} twui_layout;
+typedef struct twui_widget_ref {
+    uint32_t struct_size, reserved;
+    uint64_t widget_id, widget_generation;
+} twui_widget_ref;
+typedef struct twui_field_action {
+    uint32_t struct_size, kind;
+    uint64_t batch_id, text_bytes, widget_id, widget_generation, text_revision;
+} twui_field_action;
+
 uint32_t twui_abi_version(void);
 twui_status twui_create(const twui_config *config, twui_context **out_context);
 twui_status twui_destroy(twui_context *context);
+twui_status twui_create_with_composition(const twui_config *config, uint32_t composition,
+    twui_context **out_context);
+/* All geometry is logical and finite. Viewport dimensions/scale must be positive;
+ * bounds and clip follow the shared layout validation. Changing attachment
+ * invalidates displayed geometry immediately, before the next prepare/present.
+ * Invalid size/reserved fields/geometry leave the previous attachment intact. */
+twui_status twui_set_layout(twui_context *context, const twui_layout *layout);
+/* Single-field only. Copies UTF-8 (empty is valid), replaces the draft atomically,
+ * advances generation/revision and retires focus/preedit/physical ownership.
+ * Already queued actions retain their original identity and bytes. Obtain fresh
+ * input targets from get_state; never relabel a delayed event with fresh values.
+ * out_widget must have initialized struct_size; failures do not write it. */
+twui_status twui_bind_field(twui_context *context, const uint8_t *text, uint64_t text_len,
+    twui_widget_ref *out_widget);
 /* consumed is required; 1 means UI-owned, 0 means unhandled. Errors do not
  * permit world routing. Re-sample control after every input/lifecycle call. */
 twui_status twui_apply(twui_context *context, const twui_input *input, uint32_t *consumed);
@@ -137,7 +174,15 @@ twui_status twui_get_control(twui_context *context, twui_control *out_control);
 #define TWUI_TEXT_HISTORY UINT32_C(3)
 twui_status twui_copy_text(twui_context *context, uint32_t source, uint32_t index,
     uint8_t *buffer, uint64_t capacity, uint64_t *required);
+/* SINGLE_FIELD produces kind SUBMIT_FIELD, including empty text, and retains
+ * its draft after submission. DEMO and CHAT_PANEL produce SUBMIT_CHAT only. */
 twui_status twui_peek_action(twui_context *context, twui_action *out_action);
+/* Identity of the oldest queued field action; batch must match that oldest
+ * action. Returns INVALID_ARGUMENT for a chat action, STALE for a mismatched
+ * batch, EMPTY for no action. Does not acknowledge or alter the action.
+ * copy_action copies either kind; an empty field copies with null/zero and OK. */
+twui_status twui_get_field_action(twui_context *context, uint64_t batch_id,
+    twui_field_action *out_action);
 twui_status twui_copy_action(twui_context *context, uint64_t batch_id,
     uint8_t *buffer, uint64_t capacity, uint64_t *required);
 /* Accept/deduplicate by context identity + batch_id before acknowledging. */
@@ -146,6 +191,9 @@ twui_status twui_ack_action(twui_context *context, uint64_t batch_id);
  * retain serialized presentation order. Invalidate on resize/transform/loss.
  * Geometric input must carry the exact acknowledged stamp. */
 twui_status twui_prepare(twui_context *context, const twui_viewport *viewport, twui_stamp *out_stamp);
+/* Prepare using the exact attachment supplied to set_layout; STALE before
+ * an attachment is configured. Does not substitute demonstration bounds. */
+twui_status twui_prepare_current(twui_context *context, twui_stamp *out_stamp);
 twui_status twui_ack_presented(twui_context *context, const twui_stamp *stamp);
 /* Only discard once host confirms the frame will never be presented. */
 twui_status twui_discard_prepared(twui_context *context, const twui_stamp *stamp);
@@ -191,6 +239,7 @@ twui_status twui_set_fonts(twui_context *context, const twui_font *fonts, uint32
  * acknowledgment. Copy does not acknowledge. Alpha integration is prototype.
  */
 twui_status twui_render_prepare(twui_context *context, const twui_viewport *viewport, twui_image *out_image);
+twui_status twui_render_prepare_current(twui_context *context, twui_image *out_image);
 twui_status twui_copy_rgba(twui_context *context, const twui_stamp *stamp,
     uint8_t *buffer, uint64_t capacity, uint64_t *required);
 /* Returns EMPTY if no visible caret; requires exact currently displayed/live
