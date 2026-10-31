@@ -37,6 +37,7 @@ fn physical_key(
     pressed: bool,
 ) -> Result<Disposition, UiError> {
     ui.apply(Input::Key(KeyEvent {
+        platform_composing: false,
         physical,
         key,
         pressed,
@@ -99,6 +100,7 @@ fn cancelled_world_press_cannot_repeat_into_focused_widget() {
     key(&mut ui, Key::Backspace, true).unwrap();
     ui.apply(Input::Focus(Some(COMPOSER))).unwrap();
     ui.apply(Input::Key(KeyEvent {
+        platform_composing: false,
         physical: 2,
         key: Key::Backspace,
         pressed: true,
@@ -287,6 +289,7 @@ fn repeated_down_keeps_cancelled_press_ownership_until_release() {
         assert!(ui.control().world_input_allowed);
         assert_eq!(
             ui.apply(Input::Key(KeyEvent {
+                platform_composing: false,
                 physical: 6,
                 key: key_code,
                 pressed: true,
@@ -362,6 +365,7 @@ fn rejected_submit_still_owns_repeats_and_release_after_focus_loss() {
     ui.apply(Input::Focus(None)).unwrap();
     assert_eq!(
         ui.apply(Input::Key(KeyEvent {
+            platform_composing: false,
             physical: 1,
             key: Key::Enter,
             pressed: true,
@@ -404,6 +408,7 @@ fn more_than_256_presses_and_domain_endpoints_keep_ownership_after_blur() {
     for physical in [10, 266, u16::MAX, 1] {
         assert_eq!(
             ui.apply(Input::Key(KeyEvent {
+                platform_composing: false,
                 physical,
                 key: Key::Other,
                 pressed: true,
@@ -442,6 +447,7 @@ fn simultaneous_return_and_keypad_enter_keep_distinct_ownership_and_fences() {
     ui.apply(Input::Focus(None)).unwrap();
     assert_eq!(
         ui.apply(Input::Key(KeyEvent {
+            platform_composing: false,
             physical: 88,
             key: Key::Enter,
             pressed: true,
@@ -475,6 +481,7 @@ fn host_key_effects_require_current_owned_unquarantined_press() {
     assert!(!ui.can_apply_key_effect(57));
     assert_eq!(
         ui.apply(Input::Key(KeyEvent {
+            platform_composing: false,
             physical: 57,
             key: Key::Other,
             pressed: true,
@@ -612,6 +619,65 @@ fn explicit_ime_cancel_preserves_each_held_enter_fence() {
     })
     .unwrap();
     commit(&mut ui, "fresh");
+    physical_key(&mut ui, Key::Enter, 13, false).unwrap();
+    ui.apply(Input::Activate(SUBMIT)).unwrap();
+    assert!(ui.peek_actions().is_none());
+    physical_key(&mut ui, Key::Enter, 88, false).unwrap();
+    ui.apply(Input::Activate(SUBMIT)).unwrap();
+    assert!(ui.peek_actions().is_some());
+}
+
+fn composing_key(ui: &mut Ui, key: Key, physical: u16, repeat: bool) {
+    ui.apply(Input::Key(KeyEvent {
+        physical,
+        key,
+        platform_composing: true,
+        pressed: true,
+        repeat,
+    }))
+    .unwrap();
+}
+
+#[test]
+fn empty_platform_composition_enter_fences_new_draft_and_send_until_release() {
+    for focused in [COMPOSER, SUBMIT] {
+        let mut ui = ui();
+        commit(&mut ui, "draft");
+        ui.apply(Input::Focus(Some(focused))).unwrap();
+        let epoch = ui.control().epoch;
+        composing_key(&mut ui, Key::Enter, 13, false);
+        assert!(ui.snapshot().composer.composition.is_none());
+        assert_eq!(ui.control().epoch, epoch);
+        assert!(!ui.can_apply_key_effect(13));
+        assert!(ui.peek_actions().is_none());
+        // Completion or cancellation may produce no shared preedit at all.
+        if focused == COMPOSER {
+            ui.apply(Input::CancelComposition {
+                target: ui.text_target().unwrap(),
+            })
+            .unwrap();
+            commit(&mut ui, " after completion");
+        }
+        ui.apply(Input::Activate(SUBMIT)).unwrap();
+        assert!(ui.peek_actions().is_none());
+        composing_key(&mut ui, Key::Enter, 13, true);
+        ui.apply(Input::Activate(SUBMIT)).unwrap();
+        assert!(ui.peek_actions().is_none());
+        physical_key(&mut ui, Key::Enter, 13, false).unwrap();
+        ui.apply(Input::Activate(SUBMIT)).unwrap();
+        assert!(ui.peek_actions().is_some());
+    }
+}
+
+#[test]
+fn platform_composition_fences_two_enters_and_suppresses_edit_effects() {
+    let mut ui = ui();
+    commit(&mut ui, "keep");
+    composing_key(&mut ui, Key::Enter, 13, false);
+    composing_key(&mut ui, Key::Enter, 88, false);
+    composing_key(&mut ui, Key::Backspace, 14, false);
+    assert_eq!(ui.snapshot().composer.committed, "keep");
+    assert!(!ui.can_apply_key_effect(14));
     physical_key(&mut ui, Key::Enter, 13, false).unwrap();
     ui.apply(Input::Activate(SUBMIT)).unwrap();
     assert!(ui.peek_actions().is_none());

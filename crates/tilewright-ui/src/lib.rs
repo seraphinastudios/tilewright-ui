@@ -114,6 +114,9 @@ pub enum Key {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct KeyEvent {
+    /// This event was handled by platform composition, even if preedit is empty.
+    /// Event metadata only; it does not create a persistent composition session.
+    pub platform_composing: bool,
     /// Stable host physical identity, independent of the semantic command.
     /// Hosts must distinguish keys such as Return and keypad Enter.
     pub physical: u16,
@@ -473,6 +476,17 @@ impl Ui {
                 if !owned {
                     return Ok(Disposition::Unhandled);
                 }
+                if event.key == Key::Enter
+                    && (event.platform_composing || self.composer.is_composing())
+                {
+                    self.keys.fence_enter(event.physical);
+                }
+                if event.platform_composing {
+                    // Native composition owns this press through release, including
+                    // host helper effects; do not invent an empty preedit model.
+                    self.keys.quarantine(event.physical);
+                    return Ok(Disposition::Consumed);
+                }
                 if self
                     .control
                     .focused_widget
@@ -485,9 +499,7 @@ impl Ui {
                 if self.control.focused_widget == Some(self.composer_widget()) {
                     match event.key {
                         Key::Enter => {
-                            if self.composer.is_composing() {
-                                self.keys.fence_enter(event.physical);
-                            } else if !event.repeat {
+                            if !event.repeat {
                                 self.submit()?;
                             }
                         }
