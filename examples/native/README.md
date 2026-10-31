@@ -30,3 +30,12 @@ qualification. A compile or injected-event check does not establish those.
 The host advertises only composition rendering through the checked SDL hint
 before SDL initialization; the OS owns candidate UI. A conflicting environment
 hint is overridden and verified.
+
+For an authorized private acceptance run, `--trace NEW_PATH` writes a newly
+created 0600 TSV file. It refuses existing files and symlinks. The trace contains
+exact draft/preedit/action bytes (hex), so keep it private. Both hosts share the
+`twui-trace-v1` schema: event records contain name, rejected, consumed, composer
+hex, preedit hex, control epoch, world allowed, held-key count, focused, modal,
+anchor byte, caret byte, scroll and history count. Action records contain batch
+ID and text hex; present records contain surface/frame/geometry/UI revision.
+Limits are 16,384 records and 4 MiB; saturation fails the run explicitly.

@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 //! Intentionally bounded CPU reference demonstration, not a GPU-performance proof.
 mod input;
+mod trace;
 use input::HostInput;
 use sdl3::{
     event::Event,
@@ -20,12 +21,15 @@ use tilewright_ui_render::{
     CompiledFrame, FontBlob, FontPack, Namespace, TextGeometry, TextLimits, UiLimits, UiRenderer,
     VisualMotion,
 };
+use trace::Trace;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+// Keep the sole caller-owned event/present loop visible with trace boundaries.
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     configure_ime()?;
-    let (fonts, max_frames) = arguments()?;
+    let (fonts, max_frames, mut trace) = arguments()?;
     let limits = TextLimits::default();
     let mut renderer = UiRenderer::new(
         FontPack::new(fonts, limits)?,
@@ -68,17 +72,33 @@ fn main() -> Result<()> {
                 eprintln!("clipboard rejected: {error}");
             }
             geometry_event(&mut app, &event, window_id, displayed_render.as_ref());
+            let mut rejected = false;
             match input.event(&mut app, &event, window_id) {
                 Ok(keep) => running &= keep,
-                Err(error) => eprintln!("input rejected: {error}"),
+                Err(error) => {
+                    rejected = true;
+                    eprintln!("input rejected: {error}");
+                }
             }
             synchronize_text(&mut input, &app, &text_input, canvas.window())?;
+            if let Some(trace) = &mut trace {
+                trace.event(
+                    &trace::event_name(&event),
+                    rejected,
+                    input.last_consumed,
+                    &app,
+                    input.world_held.len(),
+                )?;
+            }
         }
         while let Some(batch) = app.ui().peek_actions().cloned() {
             // Local echo is the host effect; acknowledge after acceptance.
             for action in batch.actions {
                 let Action::SubmitChat { text } = action;
-                app.apply(Input::ReceiveMessage(text))?;
+                app.apply(Input::ReceiveMessage(text.clone()))?;
+                if let Some(trace) = &mut trace {
+                    trace.action(batch.id.get(), &text)?;
+                }
             }
             app.ack_actions(batch.id)?;
         }
@@ -91,6 +111,9 @@ fn main() -> Result<()> {
                 && let Some(caret) = compiled.editable().and_then(TextGeometry::caret)
             {
                 text_input.set_rect(canvas.window(), candidate_rect(caret), 0);
+            }
+            if let (Some(trace), Some(frame)) = (&mut trace, app.displayed()) {
+                trace.present(frame.stamp)?;
             }
             displayed_render = Some(compiled);
             frame_count += 1;
@@ -105,11 +128,12 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn arguments() -> Result<(Vec<FontBlob>, Option<u64>)> {
+fn arguments() -> Result<(Vec<FontBlob>, Option<u64>, Option<Trace>)> {
     let mut args = std::env::args().skip(1);
     let mut fonts = Vec::new();
     let mut font_bytes = 0;
     let mut max_frames = None;
+    let mut trace = None;
     while let Some(flag) = args.next() {
         match flag.as_str() {
             "--font" => {
@@ -122,11 +146,12 @@ fn arguments() -> Result<(Vec<FontBlob>, Option<u64>)> {
                 if bytes.len() > 32 * 1024 * 1024 || font_bytes > 64 * 1024 * 1024 || fonts.len() >= 32 { return Err("font budget exceeded".into()); }
                 fonts.push(FontBlob { family, bytes: Arc::from(bytes), sha256: digest(&hex)? });
             }
+            "--trace" => { if trace.is_some() { return Err("duplicate --trace".into()); } trace = Some(Trace::create(&args.next().ok_or("--trace requires a new private path")?)?); }
             "--frames" => max_frames = Some(args.next().ok_or("missing frame count")?.parse::<u64>()?),
             _ => return Err("usage: tilewright-ui-native-demo --font FAMILY PATH SHA256 [--font FAMILY PATH SHA256] [--frames N]".into()),
         }
     }
-    Ok((fonts, max_frames))
+    Ok((fonts, max_frames, trace))
 }
 fn synchronize_text(
     input: &mut HostInput,

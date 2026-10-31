@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 /* Copyright 2026 Seraphina Studios. SPDX-License-Identifier: MIT */
 /* Caller-owned SDL3 host. UI semantics, glyphs and retained frames are Rust. */
 #include <SDL3/SDL.h>
@@ -7,11 +8,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define FONT_LIMIT (32U * 1024U * 1024U)
 #define MAX_FONTS 32U
 struct host {
     twui_context *ui;
+    FILE *trace;
+    size_t trace_bytes, trace_records;
+    twui_status status;
     SDL_Window *window;
     uint64_t epoch, session_start;
     bool text_active, consumed;
@@ -44,6 +51,7 @@ static twui_status apply(struct host *host, twui_input input) {
     uint32_t consumed = 1;
     input.struct_size = sizeof(input);
     twui_status result = twui_apply(host->ui, &input, &consumed);
+    host->status = result;
     host->consumed = consumed != 0 || result != TWUI_OK;
     sync_control(host);
     if (result != TWUI_OK) fprintf(stderr, "input rejected: %" PRIu32 "\n", result);
@@ -84,6 +92,7 @@ static void clipboard(struct host *host, const SDL_KeyboardEvent *event) {
     }
 }
 static bool event(struct host *host, SDL_Event *event) {
+    host->consumed = true; host->status = TWUI_OK;
     SDL_WindowID own = SDL_GetWindowID(host->window);
     if (event->type == SDL_EVENT_QUIT) return false;
     if (event->type >= SDL_EVENT_WINDOW_FIRST && event->type <= SDL_EVENT_WINDOW_LAST && event->window.windowID != own) return true;
@@ -144,6 +153,7 @@ static bool event(struct host *host, SDL_Event *event) {
             twui_stamp stamp = { .struct_size = sizeof(stamp) }; uint32_t consumed = 1;
             if (twui_get_displayed(host->ui, &stamp) == TWUI_OK) {
                 twui_status status = twui_pointer(host->ui, &stamp, event->button.x, event->button.y, &consumed);
+                host->status = status; host->consumed = consumed != 0 || status != TWUI_OK;
                 if (status != TWUI_OK && status != TWUI_STALE) check(status, "pointer");
                 sync_control(host);
             }
@@ -153,6 +163,7 @@ static bool event(struct host *host, SDL_Event *event) {
             twui_stamp stamp = { .struct_size = sizeof(stamp) }; uint32_t consumed = 1;
             if (twui_get_displayed(host->ui, &stamp) == TWUI_OK) {
                 twui_status status = twui_scroll_at(host->ui, &stamp, event->wheel.mouse_x, event->wheel.mouse_y, (int32_t)event->wheel.y, &consumed);
+                host->status = status; host->consumed = consumed != 0 || status != TWUI_OK;
                 if (status != TWUI_OK && status != TWUI_STALE) check(status, "scroll");
                 sync_control(host);
             }
@@ -162,6 +173,52 @@ static bool event(struct host *host, SDL_Event *event) {
     }
     return true;
 }
+static FILE *trace_open(const char *path) {
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    if (fd < 0) { perror("create private trace"); exit(EXIT_FAILURE); }
+    struct stat info;
+    if (fstat(fd, &info) != 0 || (info.st_mode & 0777) != 0600) { close(fd); fputs("trace mode must be 0600\n", stderr); exit(EXIT_FAILURE); }
+    FILE *file = fdopen(fd, "w"); if (!file) { close(fd); exit(EXIT_FAILURE); } return file;
+}
+static void trace_line(struct host *host, const char *line) {
+    if (!host->trace) return;
+    size_t size = strlen(line) + 1;
+    if (host->trace_records >= 16384 || size > 4U * 1024U * 1024U - host->trace_bytes) { fputs("private trace budget exhausted\n", stderr); exit(EXIT_FAILURE); }
+    if (fprintf(host->trace, "%s\n", line) < 0 || fflush(host->trace) != 0) { fputs("trace write failed\n", stderr); exit(EXIT_FAILURE); }
+    ++host->trace_records; host->trace_bytes += size;
+}
+static void hex_bytes(const uint8_t *bytes, uint64_t size, char *hex) {
+    const char digits[] = "0123456789abcdef";
+    for (uint64_t i = 0; i < size; ++i) { hex[i * 2] = digits[bytes[i] >> 4]; hex[i * 2 + 1] = digits[bytes[i] & 15]; }
+    hex[size * 2] = 0;
+}
+static void trace_event(struct host *host, const SDL_Event *event) {
+    if (!host->trace) return;
+    twui_state current = state(host); twui_control control = { .struct_size = sizeof(control) };
+    check(twui_get_control(host->ui, &control), "trace control");
+    uint8_t text[4096]; uint64_t size = 0; char composer[8193], preedit[8193], name[80], line[18000];
+    check(twui_copy_text(host->ui, TWUI_TEXT_COMPOSER, 0, text, sizeof(text), &size), "trace composer"); hex_bytes(text,size,composer);
+    check(twui_copy_text(host->ui, TWUI_TEXT_PREEDIT, 0, text, sizeof(text), &size), "trace preedit"); hex_bytes(text,size,preedit);
+    if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) snprintf(name,sizeof(name),"key_%s:%u",event->type == SDL_EVENT_KEY_DOWN ? "down" : "up", (unsigned)event->key.scancode);
+    else if (event->type == SDL_EVENT_TEXT_INPUT) strcpy(name,"text_input");
+    else if (event->type == SDL_EVENT_TEXT_EDITING) strcpy(name,"preedit");
+    else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) strcpy(name,"pointer_down");
+    else if (event->type == SDL_EVENT_MOUSE_WHEEL) strcpy(name,"wheel");
+    else if (event->type >= SDL_EVENT_WINDOW_FIRST && event->type <= SDL_EVENT_WINDOW_LAST) snprintf(name,sizeof(name),"window:%u",(unsigned)event->type);
+    else strcpy(name,"other");
+    size_t held = 0; for (size_t i = 0; i < SDL_SCANCODE_COUNT; ++i) if (host->held[i]) ++held;
+    int length = snprintf(line,sizeof(line),"event\t%s\t%u\t%u\t%s\t%s\t%" PRIu64 "\t%u\t%zu\t%u\t%u\t%" PRIu64 "\t%" PRIu64 "\t%u\t%u",name,host->status != TWUI_OK,host->consumed,composer,preedit,control.epoch,control.world_input_allowed,held,current.focused,current.modal_open,current.anchor,current.caret,current.scroll,current.history_messages);
+    if (length < 0 || (size_t)length >= sizeof(line)) { fputs("trace record too large\n",stderr); exit(EXIT_FAILURE); }
+    trace_line(host,line);
+}
+static void trace_action(struct host *host, uint64_t batch, const uint8_t *text, uint64_t size) {
+    if (!host->trace) return;
+    char hex[8193], line[8300]; hex_bytes(text,size,hex); snprintf(line,sizeof(line),"action\t%" PRIu64 "\t%s",batch,hex); trace_line(host,line);
+}
+static void trace_present(struct host *host, const twui_stamp *stamp) {
+    if (!host->trace) return;
+    char line[200]; snprintf(line,sizeof(line),"present\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64,stamp->surface,stamp->frame,stamp->geometry,stamp->ui_revision); trace_line(host,line);
+}
 static void accept_actions(struct host *host) {
     twui_action action = { .struct_size = sizeof(action) };
     while (twui_peek_action(host->ui, &action) == TWUI_OK) {
@@ -170,6 +227,7 @@ static void accept_actions(struct host *host) {
         text[size] = 0;
         /* Local echo is the host effect; acknowledge only after acceptance. */
         check(apply(host, text_input(host, TWUI_RECEIVE, (const char *)text)), "echo");
+        trace_action(host,action.batch_id,text,size);
         check(twui_ack_action(host->ui, action.batch_id), "ack action");
     }
 }
@@ -189,7 +247,7 @@ int main(int argc, char **argv) {
     configure_ime();
     if (argc == 2 && strcmp(argv[1], "--check-ime") == 0) { puts("ime_ui=composition"); return EXIT_SUCCESS; }
     twui_font fonts[MAX_FONTS] = {{0}}; uint8_t *font_bytes[MAX_FONTS] = {0}; uint32_t font_count = 0; uint64_t total_font_bytes = 0;
-    uint64_t max_frames = 0;
+    uint64_t max_frames = 0; FILE *trace = NULL;
     for (int arg = 1; arg < argc; ++arg) {
         if (strcmp(argv[arg], "--font") == 0 && arg + 3 < argc && font_count < MAX_FONTS) {
             const char *family = argv[++arg], *path = argv[++arg], *hex = argv[++arg];
@@ -205,6 +263,8 @@ int main(int argc, char **argv) {
             font->bytes = bytes; font->byte_length = (uint64_t)length;
             for (size_t index = 0; index < 32; ++index) font->sha256[index] = (uint8_t)((nibble(hex[index * 2]) << 4) | nibble(hex[index * 2 + 1]));
             font_bytes[font_count++] = bytes;
+        } else if (strcmp(argv[arg], "--trace") == 0 && arg + 1 < argc && !trace) {
+            trace = trace_open(argv[++arg]);
         } else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
             char *end = NULL; max_frames = strtoull(argv[++arg], &end, 10); if (!end || *end != 0 || max_frames == 0) return EXIT_FAILURE;
         } else { fputs("usage: tilewright-ui-c-sdl --font FAMILY PATH SHA256 [--font FAMILY PATH SHA256] [--frames N]\n", stderr); return EXIT_FAILURE; }
@@ -214,7 +274,8 @@ int main(int argc, char **argv) {
     SDL_Window *window = SDL_CreateWindow("Tilewright shared UI — CPU reference / C SDL3", 800, 600, SDL_WINDOW_RESIZABLE);
     if (!window) { fprintf(stderr, "%s\n", SDL_GetError()); return EXIT_FAILURE; }
     SDL_Renderer *renderer = SDL_CreateRenderer(window, NULL); if (!renderer) return EXIT_FAILURE;
-    twui_config config = TWUI_CONFIG_INIT; struct host host = { .window = window };
+    twui_config config = TWUI_CONFIG_INIT; struct host host = { .window = window, .trace = trace };
+    trace_line(&host,"twui-trace-v1");
     check(twui_create(&config, &host.ui), "create"); check(twui_set_fonts(host.ui, fonts, font_count), "set fonts");
     for (uint32_t index = 0; index < font_count; ++index) free(font_bytes[index]);
     (void)apply(&host, text_input(&host, TWUI_RECEIVE, "Shared UI / caller-owned C17 SDL3"));
@@ -223,7 +284,7 @@ int main(int argc, char **argv) {
     (void)apply(&host, (twui_input){ .kind = TWUI_SET_FOCUS, .value = 1 });
     bool running = true; uint64_t frames = 0;
     while (running) {
-        SDL_Event current; while (SDL_PollEvent(&current)) if (!event(&host, &current)) running = false;
+        SDL_Event current; while (SDL_PollEvent(&current)) { if (!event(&host, &current)) running = false; trace_event(&host, &current); }
         if (!running) break;
         accept_actions(&host);
         int width = 0, height = 0; sdl_check(SDL_GetWindowSize(window, &width, &height), "size");
@@ -248,7 +309,7 @@ int main(int argc, char **argv) {
         sdl_check(SDL_UpdateTexture(texture, NULL, pixels, (int)image.stride), "upload"); free(pixels);
         sdl_check(SDL_RenderTexture(renderer, texture, NULL, NULL), "draw");
         if (!SDL_RenderPresent(renderer)) { check(twui_discard_prepared(host.ui, &image.stamp), "discard failed frame"); sdl_check(false, "present"); }
-        check(twui_ack_presented(host.ui, &image.stamp), "ack present"); SDL_DestroyTexture(texture);
+        check(twui_ack_presented(host.ui, &image.stamp), "ack present"); trace_present(&host,&image.stamp); SDL_DestroyTexture(texture);
         twui_rect caret = { .struct_size = sizeof(caret) };
         if (host.text_active && twui_get_ime_rect(host.ui, &image.stamp, &caret) == TWUI_OK) {
             SDL_Rect area = { (int)caret.x, (int)caret.y, (int)SDL_ceilf(caret.width), (int)SDL_ceilf(caret.height) };
@@ -261,5 +322,6 @@ int main(int argc, char **argv) {
     }
     sdl_check(SDL_StopTextInput(window), "stop text"); check(twui_destroy(host.ui), "destroy");
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
+    if (trace && fclose(trace) != 0) return EXIT_FAILURE;
     printf("presented_frames=%" PRIu64 "\n", frames); return EXIT_SUCCESS;
 }

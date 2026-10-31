@@ -14,6 +14,7 @@ pub struct HostInput {
     epoch: u64,
     session_start: u64,
     pub text_active: bool,
+    pub last_consumed: bool,
     pub world_held: std::collections::BTreeSet<u16>,
     pressed: std::collections::BTreeMap<u16, Key>,
 }
@@ -39,6 +40,7 @@ impl HostInput {
         event: &Event,
         window_id: u32,
     ) -> Result<bool, tilewright_app::AppError> {
+        self.last_consumed = true;
         match event {
             Event::Quit { .. } => return Ok(false),
             Event::Window {
@@ -116,6 +118,7 @@ impl HostInput {
                     pressed: true,
                     repeat: *repeat,
                 }))?;
+                self.last_consumed = disposition == tilewright_ui::Disposition::Consumed;
                 if !repeat {
                     if *keycode == Some(Keycode::Tab) && !app.ui().control().modal_open {
                         app.apply(Input::Focus(if app.ui().text_target().is_some() {
@@ -142,7 +145,7 @@ impl HostInput {
                 ..
             } if *id == window_id => {
                 let code = scancode.map_or(0, |code| code as u16);
-                app.apply(Input::Key(KeyEvent {
+                let disposition = app.apply(Input::Key(KeyEvent {
                     key: self
                         .pressed
                         .remove(&code)
@@ -150,6 +153,7 @@ impl HostInput {
                     pressed: false,
                     repeat: false,
                 }))?;
+                self.last_consumed = disposition == tilewright_ui::Disposition::Consumed;
                 self.world_held.remove(&code);
             }
             Event::MouseButtonDown {
@@ -170,6 +174,7 @@ impl HostInput {
                             app.apply(Input::Activate(SUBMIT))?;
                         }
                         WORLD => {
+                            self.last_consumed = !app.ui().control().world_input_allowed;
                             app.apply(Input::Focus(None))?;
                         }
                         _ => (),

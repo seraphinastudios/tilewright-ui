@@ -33,3 +33,9 @@ This qualifies neither production compositor performance nor OS accessibility.
 The host advertises only composition rendering through the checked SDL hint
 before SDL initialization; the OS owns candidate UI. A conflicting environment
 hint is overridden and verified.
+
+The optional `--trace NEW_PATH` uses the same private bounded TSV schema as the
+Rust host. It requires a new 0600 file, refuses symlinks/existing files, and fails
+on saturation (16,384 records/4 MiB). Keep exact text evidence private.
+`SDL_IME_IMPLEMENTED_UI=candidates ./tilewright-ui-c-sdl --check-ime` verifies the
+pre-initialization override in a fresh process without creating a window.
