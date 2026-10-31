@@ -102,7 +102,12 @@ fn main() -> Result<()> {
         while let Some(batch) = app.ui().peek_actions().cloned() {
             // Local echo is the host effect; acknowledge after acceptance.
             for action in batch.actions {
-                let Action::SubmitChat { text } = action;
+                let text = match action {
+                    Action::SubmitChat { text } => text,
+                    Action::SubmitField { .. } => {
+                        return Err("field action received by the Demo chat host".into());
+                    }
+                };
                 app.apply(Input::ReceiveMessage(text.clone()))?;
                 if let Some(trace) = &mut trace {
                     trace.action(batch.id.get(), &text)?;

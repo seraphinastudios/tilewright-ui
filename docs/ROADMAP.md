@@ -39,9 +39,10 @@ names need not change merely to adopt common widgets.
 - Use the separately reviewed renderer `0.6.2` successor. UI/app packages use
   their own future version sequence and preserve earlier immutable artifacts.
 - Prove the shared chat/input/modal slice in standalone hosts.
-- Adopt one editor control path without changing document or transaction
-  authority. Retain existing regression and native acceptance coverage.
-- Add one optional Classic panel through its existing widget/event/deinit hooks.
+- Adopt one editor string inspector control without changing document or
+  transaction authority. Retain existing regression and native acceptance
+  coverage. In parallel, add one optional Classic local-echo chat panel through
+  its existing widget/event/deinit hooks.
   Keep its single presenter, layering, coordinate and privacy contracts. Compare
   primitive submission with a bounded renderer-produced overlay before choosing
   a wider migration.
