@@ -11,10 +11,12 @@ use sdl3::{
     rect::Rect,
     render::BlendMode,
 };
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{error::Error, io::Read, sync::Arc, time::Duration};
 use tilewright_app::App;
 use tilewright_ui::{Action, COMPOSER, Input, Limits, TextSelection, Viewport};
-use tilewright_ui_render::{FontBlob, FontPack, Namespace, TextLimits, UiLimits, UiRenderer};
+use tilewright_ui_render::{
+    FontBlob, FontPack, Namespace, TextLimits, UiLimits, UiRenderer, VisualMotion,
+};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -27,7 +29,8 @@ fn main() -> Result<()> {
             "--font" => {
                 let path = args.next().ok_or("--font requires PATH SHA256")?;
                 let hex = args.next().ok_or("--font requires PATH SHA256")?;
-                let bytes = std::fs::read(&path)?;
+                let mut bytes = Vec::new();
+                std::fs::File::open(&path)?.take(32 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
                 if bytes.len() > 32 * 1024 * 1024 { return Err("font exceeds bounded size".into()); }
                 fonts.push(FontBlob { family: format!("explicit-{}", fonts.len()), bytes: Arc::from(bytes), sha256: digest(&hex)? });
             }
@@ -94,30 +97,82 @@ fn main() -> Result<()> {
                 ..
             } = &event
             {
-                if *id == window_id && keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD) {
-                    if let Some(target) = app.ui().text_target() {
-                        match key {
-                            Keycode::C | Keycode::X => {
-                                let snapshot = app.ui().snapshot();
-                                let selection = snapshot.composer.selection.range();
-                                if !selection.is_empty() && snapshot.composer.composition.is_none()
-                                {
-                                    clipboard.set_clipboard_text(
-                                        &snapshot.composer.committed[selection],
-                                    )?;
-                                    if *key == Keycode::X {
-                                        app.apply(Input::TextCommit {
-                                            target,
-                                            text: String::new(),
-                                        })?;
+                let effect = (|| -> Result<()> {
+                    if *id == window_id && keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD) {
+                        if let Some(target) = app.ui().text_target() {
+                            match key {
+                                Keycode::C | Keycode::X => {
+                                    let snapshot = app.ui().snapshot();
+                                    let selection = snapshot.composer.selection.range();
+                                    if !selection.is_empty()
+                                        && snapshot.composer.composition.is_none()
+                                    {
+                                        clipboard.set_clipboard_text(
+                                            &snapshot.composer.committed[selection],
+                                        )?;
+                                        if *key == Keycode::X {
+                                            app.apply(Input::TextCommit {
+                                                target,
+                                                text: String::new(),
+                                            })?;
+                                        }
                                     }
                                 }
+                                Keycode::V => {
+                                    let text = clipboard.clipboard_text()?;
+                                    app.apply(Input::TextCommit { target, text })?;
+                                }
+                                _ => (),
                             }
-                            Keycode::V => {
-                                let text = clipboard.clipboard_text()?;
-                                app.apply(Input::TextCommit { target, text })?;
+                        }
+                    }
+                    Ok(())
+                })();
+                if let Err(error) = effect {
+                    eprintln!("clipboard rejected: {error}");
+                }
+            }
+            if let Event::KeyDown {
+                window_id: id,
+                keycode: Some(key),
+                keymod,
+                ..
+            } = &event
+            {
+                if *id == window_id {
+                    let motion = match key {
+                        Keycode::Left => Some(VisualMotion::Left),
+                        Keycode::Right => Some(VisualMotion::Right),
+                        Keycode::Home => Some(VisualMotion::Home),
+                        Keycode::End => Some(VisualMotion::End),
+                        _ => None,
+                    };
+                    if let (Some(motion), Some(displayed), Some(compiled), Some(target)) = (
+                        motion,
+                        app.displayed(),
+                        displayed_render.as_ref(),
+                        app.ui().text_target(),
+                    ) {
+                        if let Some(editable) =
+                            tilewright_ui_render::CompiledFrame::editable(compiled)
+                        {
+                            if let Some(snapshot) = &editable.snapshot {
+                                if snapshot.composition.is_none() {
+                                    let focus =
+                                        editable.move_visual(snapshot.selection.focus, motion);
+                                    let anchor =
+                                        if keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD) {
+                                            snapshot.selection.anchor
+                                        } else {
+                                            focus
+                                        };
+                                    let _ = app.select_text(
+                                        displayed.stamp,
+                                        target,
+                                        TextSelection { anchor, focus },
+                                    );
+                                }
                             }
-                            _ => (),
                         }
                     }
                 }

@@ -117,6 +117,14 @@ static bool event(struct host *host, SDL_Event *event) {
             bool down = event->type == SDL_EVENT_KEY_DOWN;
             if (down && host->pressed[physical] == 0) host->pressed[physical] = key_value(event->key.key, event->key.mod, event->key.scancode);
             uint32_t value = host->pressed[physical] ? host->pressed[physical] : key_value(event->key.key, event->key.mod, event->key.scancode);
+            if (down && state(host).focused) {
+                uint32_t motion = event->key.key == SDLK_LEFT ? 1U : event->key.key == SDLK_RIGHT ? 2U : event->key.key == SDLK_HOME ? 3U : event->key.key == SDLK_END ? 4U : 0U;
+                twui_stamp stamp = { .struct_size = sizeof(stamp) };
+                if (motion && twui_get_displayed(host->ui, &stamp) == TWUI_OK) {
+                    twui_status moved = twui_move_visual(host->ui, &stamp, motion, (event->key.mod & SDL_KMOD_SHIFT) ? 1U : 0U);
+                    if (moved != TWUI_OK && moved != TWUI_STALE) fprintf(stderr, "cursor rejected: %" PRIu32 "\n", moved);
+                }
+            }
             if (down) clipboard(host, &event->key);
             (void)apply(host, (twui_input){ .kind = down ? TWUI_KEY_DOWN : TWUI_KEY_UP, .value = value, .key_repeat = down && event->key.repeat });
             bool owned = host->consumed;

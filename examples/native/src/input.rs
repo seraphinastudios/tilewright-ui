@@ -193,3 +193,122 @@ fn semantic_key(key: Option<Keycode>, modifiers: Mod, physical: u16) -> Key {
         _ => Key::Other(physical),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tilewright_ui::{Limits, TextSelection};
+
+    fn key(
+        code: Keycode,
+        scancode: sdl3::keyboard::Scancode,
+        modifiers: Mod,
+        pressed: bool,
+    ) -> Event {
+        if pressed {
+            Event::KeyDown {
+                timestamp: 10,
+                window_id: 1,
+                keycode: Some(code),
+                scancode: Some(scancode),
+                keymod: modifiers,
+                repeat: false,
+                which: 0,
+                raw: 0,
+            }
+        } else {
+            Event::KeyUp {
+                timestamp: 11,
+                window_id: 1,
+                keycode: Some(code),
+                scancode: Some(scancode),
+                keymod: modifiers,
+                repeat: false,
+                which: 0,
+                raw: 0,
+            }
+        }
+    }
+    #[test]
+    fn stale_window_and_session_text_never_edits_current_composer() {
+        let mut app = App::new(Limits::default()).unwrap();
+        app.apply(Input::Focus(Some(COMPOSER))).unwrap();
+        let mut host = HostInput::default();
+        host.synchronize(&app, 100);
+        for (window_id, timestamp) in [(2, 101), (1, 99)] {
+            host.event(
+                &mut app,
+                &Event::TextInput {
+                    window_id,
+                    timestamp,
+                    text: "stale".into(),
+                },
+                1,
+            )
+            .unwrap();
+        }
+        assert_eq!(app.ui().snapshot().composer.committed, "");
+        host.event(
+            &mut app,
+            &Event::TextInput {
+                window_id: 1,
+                timestamp: 101,
+                text: "accepted 🦀".into(),
+            },
+            1,
+        )
+        .unwrap();
+        assert_eq!(app.ui().snapshot().composer.committed, "accepted 🦀");
+    }
+    #[test]
+    fn modifier_release_preserves_the_original_press_identity() {
+        let mut app = App::new(Limits::default()).unwrap();
+        app.apply(Input::Focus(Some(COMPOSER))).unwrap();
+        let mut host = HostInput::default();
+        host.synchronize(&app, 0);
+        host.event(
+            &mut app,
+            &key(Keycode::A, sdl3::keyboard::Scancode::A, Mod::LCTRLMOD, true),
+            1,
+        )
+        .unwrap();
+        host.event(
+            &mut app,
+            &key(Keycode::A, sdl3::keyboard::Scancode::A, Mod::NOMOD, false),
+            1,
+        )
+        .unwrap();
+        assert!(host.pressed.is_empty());
+        let target = app.ui().text_target().unwrap();
+        app.apply(Input::Selection {
+            target,
+            selection: TextSelection::default(),
+        })
+        .unwrap();
+    }
+    #[test]
+    fn epoch_cancels_world_even_when_final_permission_is_restored() {
+        let mut app = App::new(Limits::default()).unwrap();
+        let mut host = HostInput::default();
+        host.synchronize(&app, 0);
+        host.event(
+            &mut app,
+            &key(Keycode::W, sdl3::keyboard::Scancode::W, Mod::NOMOD, true),
+            1,
+        )
+        .unwrap();
+        assert!(!host.world_held.is_empty());
+        app.apply(Input::Modal(true)).unwrap();
+        app.apply(Input::Modal(false)).unwrap();
+        assert!(app.ui().control().world_input_allowed);
+        host.synchronize(&app, 20);
+        assert!(host.world_held.is_empty());
+        host.event(
+            &mut app,
+            &key(Keycode::W, sdl3::keyboard::Scancode::W, Mod::NOMOD, false),
+            1,
+        )
+        .unwrap();
+        assert!(host.world_held.is_empty());
+    }
+}
