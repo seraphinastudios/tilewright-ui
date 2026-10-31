@@ -17,7 +17,7 @@ ALLOWED = {
     "tilewright-app": {"tilewright-ui"},
     "tilewright-ui-render": {"tilewright-ui"} | RENDERER,
     "tilewright-ui-ffi": {"tilewright-ui", "tilewright-app", "tilewright-ui-render"},
-    "tilewright-ui-web": {"tilewright-ui", "tilewright-app", "wasm-bindgen", "js-sys", "web-sys"},
+    "tilewright-ui-web": {"tilewright-ui", "tilewright-app", "wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys", "serde_json"} | RENDERER,
     "tilewright-ui-native-demo": {"tilewright-ui", "tilewright-app", "tilewright-ui-render", "sdl3", "sha2"} | RENDERER,
 }
 
