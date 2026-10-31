@@ -105,13 +105,43 @@ static void independent_physical_keys(void) {
     unchanged(before, state(ctx));
     assert(twui_destroy(ctx) == TWUI_OK);
 }
+static void platform_composition_without_preedit(void) {
+    twui_config cfg = TWUI_CONFIG_INIT;
+    twui_context *ctx = NULL;
+    assert(twui_create(&cfg, &ctx) == TWUI_OK);
+    toggle(ctx, TWUI_SET_FOCUS, 1);
+    commit(ctx, "ready");
+    twui_state before = state(ctx);
+    assert(before.preedit_bytes == 0);
+    twui_input enter = input(ctx, TWUI_KEY_DOWN);
+    enter.value = TWUI_KEY_ENTER; enter.physical_key = 40;
+    enter.platform_composing = 2;
+    assert(apply(ctx, enter) == TWUI_INVALID_ARGUMENT);
+    unchanged(before, state(ctx));
+    enter.platform_composing = 1;
+    assert(apply(ctx, enter) == TWUI_OK);
+    expect_text(ctx, "ready");
+    assert(state(ctx).preedit_bytes == 0);
+    uint32_t allowed = 1;
+    assert(twui_key_effect_allowed(ctx, 40, &allowed) == TWUI_OK && allowed == 0);
+    assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
+    twui_action action = {0}; action.struct_size = sizeof action;
+    assert(twui_peek_action(ctx, &action) == TWUI_EMPTY);
+    enter.kind = TWUI_KEY_UP; enter.platform_composing = 0;
+    assert(apply(ctx, enter) == TWUI_OK);
+    assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
+    assert(twui_peek_action(ctx, &action) == TWUI_OK);
+    assert(twui_destroy(ctx) == TWUI_OK);
+}
 int main(void) {
     assert(twui_abi_version() == TWUI_ABI_VERSION);
     assert(twui_destroy(NULL) == TWUI_INVALID_ARGUMENT);
     twui_config cfg = TWUI_CONFIG_INIT;
     twui_context *ctx = NULL;
     assert(twui_create(NULL, &ctx) == TWUI_INVALID_ARGUMENT && ctx == NULL);
-    cfg.abi_version++;
+    cfg.abi_version = 1;
+    assert(twui_create(&cfg, &ctx) == TWUI_ABI_MISMATCH && ctx == NULL);
+    cfg.abi_version = TWUI_ABI_VERSION + 1;
     assert(twui_create(&cfg, &ctx) == TWUI_ABI_MISMATCH && ctx == NULL);
     cfg.abi_version = TWUI_ABI_VERSION;
     cfg.struct_size = 4;
@@ -266,6 +296,7 @@ int main(void) {
         assert(twui_destroy(ctx) == TWUI_OK);
     }
     independent_physical_keys();
+    platform_composition_without_preedit();
     puts("C17 ABI: validation, UTF-8, atomic backpressure, control, stamps, thread and 256 lifecycle checks passed");
     return 0;
 }

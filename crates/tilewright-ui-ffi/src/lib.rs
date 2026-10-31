@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, ThreadId};
 use tilewright_app::App;
 
+pub const ABI_VERSION: u32 = 2;
 pub const OK: u32 = 0;
 pub const INVALID_ARGUMENT: u32 = 1;
 pub const ABI_MISMATCH: u32 = 2;
@@ -60,6 +61,7 @@ pub struct Input {
     pub delta: i32,
     pub key_repeat: u32,
     pub physical_key: u32,
+    pub platform_composing: u32,
 }
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -257,7 +259,7 @@ unsafe fn with_context(context: *mut Context, f: impl FnOnce(&mut Engine) -> Res
 
 #[unsafe(no_mangle)]
 pub extern "C" fn twui_abi_version() -> u32 {
-    1
+    ABI_VERSION
 }
 
 #[unsafe(no_mangle)]
@@ -358,7 +360,7 @@ pub unsafe extern "C" fn twui_create(config: *const Config, output: *mut *mut Co
     match catch_unwind(AssertUnwindSafe(|| -> Result<()> {
         // SAFETY: caller supplies valid sized config storage.
         let config = unsafe { read_sized(config)? };
-        if config.abi_version != 1 {
+        if config.abi_version != ABI_VERSION {
             return Err(ABI_MISMATCH);
         }
         // Explicit allocation/work bounds for this prototype C surface.
@@ -409,7 +411,11 @@ fn preedit_offset(value: u64) -> Result<i32> {
 
 unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input> {
     use tilewright_ui::{Input as I, *};
-    if input.reserved != 0 || input.key_repeat > 1 || (input.kind != 14 && input.key_repeat != 0) {
+    if input.reserved != 0
+        || input.key_repeat > 1
+        || input.platform_composing > 1
+        || (input.kind != 14 && input.key_repeat != 0)
+    {
         return Err(INVALID_ARGUMENT);
     }
     let text_kind = matches!(input.kind, 1 | 2 | 12);
@@ -424,7 +430,8 @@ unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input>
         || (!offset_kind && (input.anchor != 0 || input.caret != 0))
         || (!value_kind && input.value != 0)
         || (input.kind != 13 && input.delta != 0)
-        || (!matches!(input.kind, 14 | 15) && input.physical_key != 0)
+        || (!matches!(input.kind, 14 | 15)
+            && (input.physical_key != 0 || input.platform_composing != 0))
     {
         return Err(INVALID_ARGUMENT);
     }
@@ -493,6 +500,7 @@ unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input>
             },
             pressed: input.kind == 14,
             repeat: input.key_repeat != 0,
+            platform_composing: input.platform_composing != 0,
         }),
         _ => return Err(INVALID_ARGUMENT),
     })

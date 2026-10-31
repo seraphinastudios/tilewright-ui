@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-/* Prototype ABI 1. Not a published ABI stability promise.
+/* Prototype ABI 2. Not a published ABI stability promise.
  * The host owns windows, event loops, rendering/presentation and world effects.
  * All context calls, including destroy, must run on the creating thread. Calls
  * may not overlap or reenter. Each pointer must reference valid, appropriately
@@ -20,7 +20,7 @@ extern "C" {
  * Initialize every POD struct_size to sizeof(the struct). Extra trailing bytes
  * are ignored. Reserved fields must be zero. Flags are exact 0/1 unless noted.
  */
-#define TWUI_ABI_VERSION UINT32_C(1)
+#define TWUI_ABI_VERSION UINT32_C(2)
 typedef struct twui_context twui_context;
 typedef uint32_t twui_status;
 #define TWUI_OK UINT32_C(0)
@@ -53,7 +53,9 @@ typedef struct twui_config {
  * SET_FOCUS, SET_MODAL, SET_SUSPENDED, SET_WINDOW_FOCUS use value (0 or 1).
  * KEY_DOWN/KEY_UP use value from TWUI_KEY_* and a stable physical_key in
  * 0..65535 (for example an SDL scancode). Different physical keys MUST keep
- * distinct identities even when both mean Enter. SCROLL uses signed delta.
+ * distinct identities even when both mean Enter. platform_composing carries
+ * OS IME state even with empty preedit; an owned Enter is fenced until release.
+ * SCROLL uses signed delta.
  * Unused fields must be zero. A physical key is distinct from committed text.
  */
 #define TWUI_COMMIT UINT32_C(1)
@@ -86,6 +88,8 @@ typedef struct twui_input {
     int32_t delta;
     uint32_t key_repeat; /* 0/1, only KEY_DOWN; other kinds require zero */
     uint32_t physical_key; /* 0..65535 for key events; zero for other kinds */
+    uint32_t platform_composing; /* 0/1 OS IME indication for this key event;
+                                    zero for other input kinds */
 } twui_input;
 
 typedef struct twui_state {

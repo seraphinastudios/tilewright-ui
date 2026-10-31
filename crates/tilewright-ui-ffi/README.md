@@ -1,6 +1,6 @@
 # Prototype C boundary
 
-`include/tilewright_ui.h` defines ABI version 1. This is an unpublished prototype,
+`include/tilewright_ui.h` defines ABI version 2. Version 1 clients are rejected at creation. This is an unpublished prototype,
 not a stable ABI release. The host owns its event loop, SDL, windows, clipboard,
 world controls and presentation. No host callback, path loading, network access
 or native GPU handle crosses this facade.
@@ -23,6 +23,9 @@ Text commands carry generation, control epoch and text revision. Obtain these
 from `twui_get_state` at event capture; do not replace an old queued event's
 identity with current values. Key input also carries a stable physical identity
 independent of its semantic meaning, so Return and Numpad Enter remain distinct.
+The checked `platform_composing` flag carries an OS IME indication even when
+preedit is empty; owned Enter presses remain fenced until release. ABI 2 is
+required because this field occupies formerly unused tail padding.
 Apply a key successfully and query `twui_key_effect_allowed` before clipboard or
 other host editing effects. Consumed events may be quarantined and do not alone
 authorize those effects. `twui_move_visual` also checks physical ownership. A

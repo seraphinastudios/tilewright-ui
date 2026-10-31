@@ -360,7 +360,7 @@ mod tests {
             .collect();
         let config = Config {
             struct_size: size_of::<Config>() as u32,
-            abi_version: 1,
+            abi_version: ABI_VERSION,
             message_bytes: 4096,
             history_messages: 16,
             history_bytes: 8192,
@@ -394,6 +394,7 @@ mod tests {
                             key: Key::Other,
                             pressed: true,
                             repeat: false,
+                            platform_composing: false,
                         }))
                         .map_err(app_error)?;
                     engine
@@ -405,6 +406,7 @@ mod tests {
                             key: Key::Other,
                             pressed: true,
                             repeat: false,
+                            platform_composing: false,
                         }))
                         .map_err(app_error)?;
                     engine.apply(Input::Focus(None)).map_err(app_error)?;
@@ -515,6 +517,7 @@ mod tests {
                             key: tilewright_ui::Key::Other,
                             pressed: true,
                             repeat: false,
+                            platform_composing: false,
                         }))
                         .map_err(app_error)?;
                     Ok(())
