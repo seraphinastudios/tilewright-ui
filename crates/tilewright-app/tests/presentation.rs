@@ -121,3 +121,26 @@ fn acknowledging_output_preserves_current_presentation_identity() {
     assert!(app.ui().peek_actions().is_none());
     assert!(app.validate_displayed(frame.stamp).is_ok());
 }
+
+#[test]
+fn scroll_region_has_semantic_identity_behind_composer_and_button() {
+    let mut app = App::new(Limits::default()).unwrap();
+    let frame = app.prepare(viewport()).unwrap();
+    app.ack_presented(frame.stamp).unwrap();
+    assert_eq!(
+        app.hit_test(frame.stamp, 20.0, 400.0).unwrap().unwrap().id,
+        tilewright_ui::HISTORY
+    );
+    assert_eq!(
+        app.hit_test(frame.stamp, 20.0, 570.0).unwrap().unwrap().id,
+        COMPOSER
+    );
+    assert_eq!(
+        app.hit_test(frame.stamp, 750.0, 570.0).unwrap().unwrap().id,
+        tilewright_ui::SUBMIT
+    );
+    assert_eq!(
+        app.hit_test(frame.stamp, 20.0, 100.0).unwrap().unwrap().id,
+        tilewright_ui::WORLD
+    );
+}

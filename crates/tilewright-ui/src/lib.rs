@@ -46,6 +46,7 @@ pub const COMPOSER: WidgetId = WidgetId(1);
 pub const SUBMIT: WidgetId = WidgetId(2);
 pub const MODAL: WidgetId = WidgetId(3);
 pub const WORLD: WidgetId = WidgetId(4);
+pub const HISTORY: WidgetId = WidgetId(5);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WidgetRef {
     pub id: WidgetId,
@@ -709,6 +710,11 @@ pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiErr
         bounds: world,
         clip: full,
     }];
+    hits.push(HitRegion {
+        widget: singleton(HISTORY),
+        bounds: panel,
+        clip: full,
+    });
     let history_clip = Rect {
         height: (composer.y - panel.y - 8.0).max(0.0),
         ..panel
@@ -725,7 +731,7 @@ pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiErr
             break;
         }
         paint.push(Paint::Text {
-            widget: singleton(WidgetId(5)),
+            widget: singleton(HISTORY),
             bounds: Rect {
                 x: 8.0,
                 y,
