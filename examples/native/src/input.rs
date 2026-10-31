@@ -15,10 +15,22 @@ pub struct HostInput {
     session_start: u64,
     pub text_active: bool,
     pub last_consumed: bool,
+    batch_ime_activity: bool,
     pub world_held: std::collections::BTreeSet<u16>,
     pressed: std::collections::BTreeMap<u16, Key>,
 }
 impl HostInput {
+    /// Inspect the bounded drain before dispatch, as in the MIT editor's
+    /// submission fence. A full drain conservatively blocks Enter as well.
+    pub fn begin_batch(&mut self, app: &App, events: &[Event], window_id: u32) {
+        self.batch_ime_activity = app.ui().snapshot().composer.composition.is_some()
+            || events.len() == 1024
+            || events.iter().any(|event| {
+                matches!(event,
+                Event::TextEditing { window_id: id, .. } | Event::TextInput { window_id: id, .. }
+                if *id == window_id)
+            });
+    }
     /// Every control epoch is a cancellation barrier, even if final allowed=true.
     pub fn synchronize(&mut self, app: &App, now_ns: u64) -> bool {
         let control = app.ui().control();
@@ -119,6 +131,7 @@ impl HostInput {
                 let disposition = app.apply(Input::Key(KeyEvent {
                     key,
                     physical: code,
+                    platform_composing: key == Key::Enter && self.batch_ime_activity,
                     pressed: true,
                     repeat: *repeat,
                 }))?;
@@ -153,6 +166,7 @@ impl HostInput {
                 };
                 let disposition = app.apply(Input::Key(KeyEvent {
                     physical: code,
+                    platform_composing: false,
                     key: self
                         .pressed
                         .remove(&code)
@@ -446,5 +460,47 @@ mod tests {
         assert!(host.last_consumed);
         assert!(!app.ui().can_apply_key_effect(Scancode::Left as u16));
         assert!(host.world_held.is_empty());
+    }
+    #[test]
+    fn commit_and_enter_in_either_batch_order_confirm_without_submitting() {
+        use sdl3::keyboard::Scancode;
+        for commit_first in [true, false] {
+            let mut app = App::new(Limits::default()).unwrap();
+            app.apply(Input::Focus(Some(COMPOSER))).unwrap();
+            let mut host = HostInput::default();
+            host.synchronize(&app, 0);
+            let commit = Event::TextInput {
+                timestamp: 100,
+                window_id: 1,
+                text: "confirmed".into(),
+            };
+            let enter = key(Keycode::Return, Scancode::Return, Mod::NOMOD, true);
+            let batch = if commit_first {
+                vec![commit, enter]
+            } else {
+                vec![enter, commit]
+            };
+            host.begin_batch(&app, &batch, 1);
+            for e in &batch {
+                host.event(&mut app, e, 1).unwrap();
+            }
+            assert!(app.ui().peek_actions().is_none());
+            assert_eq!(app.ui().snapshot().composer.committed, "confirmed");
+            host.event(
+                &mut app,
+                &key(Keycode::Return, Scancode::Return, Mod::NOMOD, false),
+                1,
+            )
+            .unwrap();
+            host.begin_batch(&app, &[], 1);
+            host.event(
+                &mut app,
+                &key(Keycode::Return, Scancode::Return, Mod::NOMOD, true),
+                1,
+            )
+            .unwrap();
+            assert_eq!(app.ui().peek_actions().unwrap().actions.len(), 1);
+            assert_eq!(app.ui().snapshot().composer.committed, "");
+        }
     }
 }

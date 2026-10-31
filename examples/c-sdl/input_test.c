@@ -39,6 +39,18 @@ int main(void) {
         assert(!allowed(&host,first) && allowed(&host,second));
         send_key(&host,reverse ? SDLK_RETURN : SDLK_KP_ENTER,second,false,false); assert(!allowed(&host,second));
     }
+    for (int commit_first = 0; commit_first < 2; ++commit_first) {
+        reset(&host); check(apply(&host,(twui_input){.kind=TWUI_SET_FOCUS,.value=1}),"focus");
+        SDL_Event enter={0}; enter.type=SDL_EVENT_KEY_DOWN; enter.key.windowID=SDL_GetWindowID(window); enter.key.key=SDLK_RETURN; enter.key.scancode=SDL_SCANCODE_RETURN;
+        SDL_Event text={0}; text.type=SDL_EVENT_TEXT_INPUT; text.text.windowID=SDL_GetWindowID(window); text.text.timestamp=SDL_GetTicksNS(); text.text.text="confirmed";
+        SDL_Event batch[2]={commit_first ? text : enter,commit_first ? enter : text};
+        begin_batch(&host,batch,2); assert(event(&host,&batch[0])); assert(event(&host,&batch[1]));
+        twui_action action={.struct_size=sizeof(action)}; assert(twui_peek_action(host.ui,&action)==TWUI_EMPTY);
+        assert(state(&host).composer_bytes==9);
+        send_key(&host,SDLK_RETURN,SDL_SCANCODE_RETURN,false,false);
+        begin_batch(&host,NULL,0); send_key(&host,SDLK_RETURN,SDL_SCANCODE_RETURN,true,false);
+        check(twui_peek_action(host.ui,&action),"confirmed next Enter"); assert(action.text_bytes==9);
+    }
     reset(&host); send_key(&host,SDLK_LEFT,SDL_SCANCODE_LEFT,true,false);
     check(apply(&host,(twui_input){.kind=TWUI_SET_FOCUS,.value=1}),"focus");
     check(apply(&host,text_input(&host,TWUI_COMMIT,"abc")),"text"); present_model(&host,800);

@@ -21,7 +21,7 @@ struct host {
     twui_status status;
     SDL_Window *window;
     uint64_t epoch, session_start;
-    bool text_active, consumed;
+    bool text_active, consumed, batch_ime_activity;
     bool held[SDL_SCANCODE_COUNT];
     uint32_t pressed[SDL_SCANCODE_COUNT];
 };
@@ -127,7 +127,7 @@ static bool event(struct host *host, SDL_Event *event) {
             bool new_press = host->pressed[physical] == 0;
             if (down && new_press) host->pressed[physical] = key_value(event->key.key, event->key.mod);
             uint32_t value = host->pressed[physical] ? host->pressed[physical] : key_value(event->key.key, event->key.mod);
-            twui_status key_status = apply(host, (twui_input){ .kind = down ? TWUI_KEY_DOWN : TWUI_KEY_UP, .value = value, .physical_key = (uint32_t)physical, .key_repeat = down && event->key.repeat });
+            twui_status key_status = apply(host, (twui_input){ .kind = down ? TWUI_KEY_DOWN : TWUI_KEY_UP, .value = value, .physical_key = (uint32_t)physical, .platform_composing = down && value == TWUI_KEY_ENTER && host->batch_ime_activity, .key_repeat = down && event->key.repeat });
             bool owned = host->consumed;
             uint32_t effect_allowed = 0;
             if (down && key_status == TWUI_OK) check(twui_key_effect_allowed(host->ui, (uint32_t)physical, &effect_allowed), "key effect permission");
@@ -223,6 +223,44 @@ static void trace_present(struct host *host, const twui_stamp *stamp) {
     if (!host->trace) return;
     char line[200]; snprintf(line,sizeof(line),"present\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64,stamp->surface,stamp->frame,stamp->geometry,stamp->ui_revision); trace_line(host,line);
 }
+/* SDL may free event text at the next pump. Copy only bounded text while
+ * collecting the drain, before determining which Enter events confirm IME. */
+static void begin_batch(struct host *host, const SDL_Event *events, size_t count) {
+    host->batch_ime_activity = state(host).preedit_bytes != 0 || count == 1024;
+    SDL_WindowID own = SDL_GetWindowID(host->window);
+    for (size_t i = 0; i < count; ++i) {
+        if ((events[i].type == SDL_EVENT_TEXT_INPUT && events[i].text.windowID == own)
+            || (events[i].type == SDL_EVENT_TEXT_EDITING && events[i].edit.windowID == own))
+            host->batch_ime_activity = true;
+    }
+}
+static bool process_events(struct host *host) {
+    struct batch { SDL_Event events[1024]; char *text[1024]; bool oversized[1024]; };
+    struct batch *batch = calloc(1,sizeof(*batch)); if (!batch) exit(EXIT_FAILURE);
+    size_t count = 0;
+    while (count < 1024 && SDL_PollEvent(&batch->events[count])) {
+        SDL_Event *e = &batch->events[count];
+        const char *text = e->type == SDL_EVENT_TEXT_INPUT ? e->text.text : e->type == SDL_EVENT_TEXT_EDITING ? e->edit.text : NULL;
+        if (text) {
+            size_t length = strnlen(text,4097);
+            if (length > 4096) batch->oversized[count] = true;
+            else {
+                batch->text[count] = malloc(length+1); if (!batch->text[count]) exit(EXIT_FAILURE);
+                memcpy(batch->text[count],text,length+1);
+                if (e->type == SDL_EVENT_TEXT_INPUT) e->text.text = batch->text[count]; else e->edit.text = batch->text[count];
+            }
+        }
+        ++count;
+    }
+    begin_batch(host,batch->events,count);
+    bool running = true;
+    for (size_t i = 0; i < count; ++i) {
+        if (batch->oversized[i]) { host->status = TWUI_LIMIT_EXCEEDED; host->consumed = true; }
+        else if (!event(host,&batch->events[i])) running = false;
+        trace_event(host,&batch->events[i]); free(batch->text[i]);
+    }
+    free(batch); return running;
+}
 static void accept_actions(struct host *host) {
     twui_action action = { .struct_size = sizeof(action) };
     while (twui_peek_action(host->ui, &action) == TWUI_OK) {
@@ -289,7 +327,7 @@ int main(int argc, char **argv) {
     trace_event(&host,NULL);
     bool running = true; uint64_t frames = 0;
     while (running) {
-        SDL_Event current; while (SDL_PollEvent(&current)) { if (!event(&host, &current)) running = false; trace_event(&host, &current); }
+        running = process_events(&host);
         if (!running) break;
         accept_actions(&host);
         int width = 0, height = 0; sdl_check(SDL_GetWindowSize(window, &width, &height), "size");

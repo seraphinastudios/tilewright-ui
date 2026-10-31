@@ -71,7 +71,9 @@ fn main() -> Result<()> {
     }
     while running {
         synchronize_text(&mut input, &app, &text_input, canvas.window())?;
-        for event in events.poll_iter() {
+        let batch: Vec<_> = events.poll_iter().take(1024).collect();
+        input.begin_batch(&app, &batch, window_id);
+        for event in batch {
             let mut rejected = false;
             match input.event(&mut app, &event, window_id) {
                 Ok(keep) => running &= keep,
