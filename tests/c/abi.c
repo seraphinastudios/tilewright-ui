@@ -84,6 +84,30 @@ int main(void) {
     thrd_t other;
     assert(thrd_create(&other, wrong_thread, ctx) == thrd_success);
     assert(thrd_join(other, NULL) == thrd_success);
+    /* More than the former 256-entry key ledger: every accepted UI press keeps
+       ownership through blur/refocus, including the full uint16 endpoint. */
+    toggle(ctx, TWUI_SET_FOCUS, 1);
+    for (uint32_t key = 0; key < 300; ++key) {
+        twui_input pressed = input(ctx, TWUI_KEY_DOWN);
+        pressed.value = TWUI_KEY_PHYSICAL_BASE + key;
+        uint32_t owned = 0;
+        assert(twui_apply(ctx, &pressed, &owned) == TWUI_OK && owned == 1);
+    }
+    twui_input endpoint = input(ctx, TWUI_KEY_DOWN);
+    endpoint.value = TWUI_KEY_PHYSICAL_BASE + UINT16_MAX;
+    assert(apply(ctx, endpoint) == TWUI_OK);
+    toggle(ctx, TWUI_SET_WINDOW_FOCUS, 0);
+    toggle(ctx, TWUI_SET_WINDOW_FOCUS, 1);
+    for (uint32_t key = 0; key < 300; ++key) {
+        twui_input released = input(ctx, TWUI_KEY_UP);
+        released.value = TWUI_KEY_PHYSICAL_BASE + key;
+        uint32_t owned = 0;
+        assert(twui_apply(ctx, &released, &owned) == TWUI_OK && owned == 1);
+    }
+    endpoint.kind = TWUI_KEY_UP;
+    uint32_t endpoint_owned = 0;
+    assert(twui_apply(ctx, &endpoint, &endpoint_owned) == TWUI_OK && endpoint_owned == 1);
+
     /* Only an explicit world hit may escape UI routing. Opaque panel gaps and
        points outside the surface must never click the world behind the UI. */
     twui_input received = input(ctx, TWUI_RECEIVE);
