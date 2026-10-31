@@ -205,11 +205,19 @@ impl UiRenderer {
                         None
                     };
                     let mut origin = [bounds.x, bounds.y];
-                    let text_clip = intersect(*bounds, *clip).unwrap_or(Rect {
-                        width: 0.0,
-                        height: 0.0,
-                        ..*clip
-                    });
+                    let target = Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: layout.viewport.width,
+                        height: layout.viewport.height,
+                    };
+                    let text_clip = intersect(*bounds, *clip)
+                        .and_then(|clip| intersect(clip, target))
+                        .unwrap_or(Rect {
+                            width: 0.0,
+                            height: 0.0,
+                            ..*clip
+                        });
                     if let Some(input) = &editable {
                         let cursor = renderer_cursor(input.display_selection.focus);
                         let caret = shaped.caret(cursor).ok_or(Error::StaleSnapshot)?;

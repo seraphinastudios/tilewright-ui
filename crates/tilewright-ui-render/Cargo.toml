@@ -22,8 +22,5 @@ tilewright-render-testkit = { workspace = true, optional = true }
 # Production consumers submit `Presentation::scene` to their renderer instead.
 prototype = ["dep:tilewright-render-testkit"]
 
-[dev-dependencies]
-serde_json.workspace = true
-
 [lints]
 workspace = true

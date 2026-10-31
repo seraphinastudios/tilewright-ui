@@ -88,23 +88,104 @@ fn fonts() -> FontPack {
         std::env::var_os("TILEWRIGHT_UI_FONT_ROOT")
             .expect("explicit TILEWRIGHT_UI_FONT_ROOT required"),
     );
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(root.join("manifest.json")).unwrap()).unwrap();
-    let fonts = manifest["fonts"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|font| {
-            let hex = font["sha256"].as_str().unwrap();
+    // Exact ordered renderer pack manifest at 4488ffb; all bytes stay external.
+    let entries = [
+        (
+            "Noto Sans",
+            "fonts/notosans/NotoSans[wdth,wght].ttf",
+            "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
+        ),
+        (
+            "Noto Sans Arabic",
+            "fonts/notosansarabic/NotoSansArabic[wdth,wght].ttf",
+            "63111b5b2e074dd48cc67692e0a2726d86ee94c1c37fe8598257b7b4e87e869e",
+        ),
+        (
+            "Noto Sans Hebrew",
+            "fonts/notosanshebrew/NotoSansHebrew[wdth,wght].ttf",
+            "7ef36a2c3593758cdb622e1bdef4f84523e92fbc3ccc667438dd80ff54c2de88",
+        ),
+        (
+            "Noto Sans Devanagari",
+            "fonts/notosansdevanagari/NotoSansDevanagari[wdth,wght].ttf",
+            "14ec4af41f27482216d1c2229f417ff9b1425e1babb014e57d1d40d03229853e",
+        ),
+        (
+            "Noto Sans Bengali",
+            "fonts/notosansbengali/NotoSansBengali[wdth,wght].ttf",
+            "dcd42978094e584a849c84a51450eeac40c8826057d566ea6d4b9627a403a05a",
+        ),
+        (
+            "Noto Sans Gujarati",
+            "fonts/notosansgujarati/NotoSansGujarati[wdth,wght].ttf",
+            "9901d8552f1dd5d2c50dbd4caa6f6e174e74e8264f06594ab259ae6e7b1ac428",
+        ),
+        (
+            "Noto Sans Gurmukhi",
+            "fonts/notosansgurmukhi/NotoSansGurmukhi[wdth,wght].ttf",
+            "1e6f728fa620e566f842d81e220265813faa12771214765d289c98e035adc5f2",
+        ),
+        (
+            "Noto Sans Tamil",
+            "fonts/notosanstamil/NotoSansTamil[wdth,wght].ttf",
+            "aa3a9b321f4b0bb2c40203ffbde9af89713227866e0e13f76e5b9eeea727cf88",
+        ),
+        (
+            "Noto Sans Telugu",
+            "fonts/notosanstelugu/NotoSansTelugu[wdth,wght].ttf",
+            "e618af7bf999df192ed4f388eba2e563f2b5015034e9cbb317b5bd793bd7334d",
+        ),
+        (
+            "Noto Sans Kannada",
+            "fonts/notosanskannada/NotoSansKannada[wdth,wght].ttf",
+            "cca4f3b3a8cb12fb261f1b43baf5d2f7f59d90fe123d41f0065ed3a183997ec9",
+        ),
+        (
+            "Noto Sans Malayalam",
+            "fonts/notosansmalayalam/NotoSansMalayalam[wdth,wght].ttf",
+            "312e0e7c3cc15fa09eb42a8f749eeb246b593ed420e3c81aafe8d910c3a6fb56",
+        ),
+        (
+            "Noto Sans Oriya",
+            "fonts/notosansoriya/NotoSansOriya[wdth,wght].ttf",
+            "910342275d619081b896b4ed25fd9ad6ff320c25591b810de1fcc4beb153ba82",
+        ),
+        (
+            "Noto Sans Sinhala",
+            "fonts/notosanssinhala/NotoSansSinhala[wdth,wght].ttf",
+            "9bd93e407a278075be403324063bc94a7e306c44de4df81214e932330c22eecf",
+        ),
+        (
+            "Noto Sans Thai",
+            "fonts/notosansthai/NotoSansThai[wdth,wght].ttf",
+            "5a1c559bb539583c8a1fd99d1c5b9491e5e14478c9cd2bd0970d5c3096cc9ef8",
+        ),
+        (
+            "Noto Sans SC",
+            "fonts/notosanssc/NotoSansSC[wght].ttf",
+            "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+        ),
+        (
+            "Noto Sans KR",
+            "fonts/notosanskr/NotoSansKR[wght].ttf",
+            "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252",
+        ),
+        (
+            "Noto Emoji",
+            "fonts/notoemoji/NotoEmoji[wght].ttf",
+            "de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551",
+        ),
+    ];
+    let fonts = entries
+        .into_iter()
+        .map(|(family, path, hex)| {
             let mut sha256 = [0_u8; 32];
             for (index, byte) in sha256.iter_mut().enumerate() {
                 *byte = u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).unwrap();
             }
             FontBlob {
-                family: font["family"].as_str().unwrap().into(),
-                bytes: std::fs::read(root.join(font["path"].as_str().unwrap()))
-                    .unwrap()
-                    .into(),
+                family: family.into(),
+                bytes: std::fs::read(root.join(path)).unwrap().into(),
                 sha256,
             }
         })
