@@ -75,6 +75,12 @@ Control updates require no action-queue slot and overwrite a bounded latest-valu
 
 Physical key/button ownership remains attached to a press until release or cancellation. A release belonging to a cancelled or widget-owned press is consumed/quarantined, not reinterpreted as world input. A focused text widget owns down/up/text/composition events. Platform adapters must not independently run world shortcuts against an already consumed event.
 
+The physical ownership ledger is safety state, separate from ordinary widget
+transactions. A failed submission still records ownership of its triggering
+press, so subsequent repeats or releases cannot escape to world controls after
+focus changes. Its bounded representation covers the entire admitted key domain;
+ordinary action-queue pressure must not make ownership recording fallible.
+
 For future async effects, every request carries context/widget generation, request ID and expected revision. Closing its owner immediately invalidates acceptance independently of worker completion. A full completion inbox returns `QueueFull`; the producer retains the completion for retry or explicitly cancels the request, and the configured outstanding-work budget bounds both. Never silently drop a successful completion or allocate an unbounded retry list. Apply lifecycle/cancellation barriers before queued completions, then process completions in accepted sequence order and ordinary input in host-supplied order. Do not add background workers for this prototype.
 
 ## Prepared geometry is not displayed geometry
