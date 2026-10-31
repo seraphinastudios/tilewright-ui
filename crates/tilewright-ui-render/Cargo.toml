@@ -11,6 +11,19 @@ publish = false
 
 [dependencies]
 tilewright-ui.workspace = true
+tilewright-scene.workspace = true
+tilewright-render-ui.workspace = true
+tilewright-render-api.workspace = true
+tilewright-render-resources.workspace = true
+tilewright-render-testkit = { workspace = true, optional = true }
+
+[features]
+# Bounded CPU reference presentation for the unpublished native/C prototypes.
+# Production consumers submit `Presentation::scene` to their renderer instead.
+prototype = ["dep:tilewright-render-testkit"]
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true
