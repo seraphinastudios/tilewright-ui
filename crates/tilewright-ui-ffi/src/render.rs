@@ -274,6 +274,7 @@ pub(super) fn select_at(
 pub unsafe extern "C" fn twui_move_visual(
     context: *mut Context,
     stamp: *const Stamp,
+    physical_key: u32,
     motion: u32,
     extend: u32,
 ) -> u32 {
@@ -281,6 +282,10 @@ pub unsafe extern "C" fn twui_move_visual(
     unsafe {
         with_context(context, |engine| {
             use tilewright_ui_render::VisualMotion;
+            let physical = u16::try_from(physical_key).map_err(|_| INVALID_ARGUMENT)?;
+            if !engine.ui().can_apply_key_effect(physical) {
+                return Err(STALE);
+            }
             let motion = match motion {
                 1 => VisualMotion::Left,
                 2 => VisualMotion::Right,
@@ -382,8 +387,29 @@ mod tests {
             drop(bytes); // subsequent rendering must use owned copies
             assert_eq!(
                 with_context(context, |engine| {
+                    use tilewright_ui::{COMPOSER, Input, Key, KeyEvent};
                     engine
-                        .apply(tilewright_ui::Input::Focus(Some(tilewright_ui::COMPOSER)))
+                        .apply(Input::Key(KeyEvent {
+                            physical: 80,
+                            key: Key::Other,
+                            pressed: true,
+                            repeat: false,
+                        }))
+                        .map_err(app_error)?;
+                    engine
+                        .apply(Input::Focus(Some(COMPOSER)))
+                        .map_err(app_error)?;
+                    engine
+                        .apply(Input::Key(KeyEvent {
+                            physical: 81,
+                            key: Key::Other,
+                            pressed: true,
+                            repeat: false,
+                        }))
+                        .map_err(app_error)?;
+                    engine.apply(Input::Focus(None)).map_err(app_error)?;
+                    engine
+                        .apply(Input::Focus(Some(COMPOSER)))
                         .map_err(app_error)?;
                     let target = engine.ui().text_target().ok_or(STALE)?;
                     engine
@@ -476,7 +502,26 @@ mod tests {
                 ),
                 STALE
             );
-            assert_eq!(twui_move_visual(context, &second.stamp, 1, 0), OK);
+            // Displayed geometry alone cannot authorize effects for absent,
+            // world-owned or quarantined physical presses.
+            assert_eq!(twui_move_visual(context, &second.stamp, 79, 1, 0), STALE);
+            assert_eq!(twui_move_visual(context, &second.stamp, 80, 1, 0), STALE);
+            assert_eq!(twui_move_visual(context, &second.stamp, 81, 1, 0), STALE);
+            assert_eq!(
+                with_context(context, |engine| {
+                    engine
+                        .apply(tilewright_ui::Input::Key(tilewright_ui::KeyEvent {
+                            physical: 79,
+                            key: tilewright_ui::Key::Other,
+                            pressed: true,
+                            repeat: false,
+                        }))
+                        .map_err(app_error)?;
+                    Ok(())
+                }),
+                OK
+            );
+            assert_eq!(twui_move_visual(context, &second.stamp, 79, 1, 0), OK);
             assert_eq!(twui_get_ime_rect(context, &second.stamp, &mut rect), STALE);
             assert_eq!(twui_invalidate_surface(context), OK);
             assert_eq!(

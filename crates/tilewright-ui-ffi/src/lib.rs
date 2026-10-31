@@ -59,6 +59,7 @@ pub struct Input {
     pub text_revision: u64,
     pub delta: i32,
     pub key_repeat: u32,
+    pub physical_key: u32,
 }
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -423,6 +424,7 @@ unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input>
         || (!offset_kind && (input.anchor != 0 || input.caret != 0))
         || (!value_kind && input.value != 0)
         || (input.kind != 13 && input.delta != 0)
+        || (!matches!(input.kind, 14 | 15) && input.physical_key != 0)
     {
         return Err(INVALID_ARGUMENT);
     }
@@ -479,14 +481,14 @@ unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input>
         12 => I::ReceiveMessage(text()?),
         13 => I::Scroll(input.delta),
         14 | 15 => I::Key(KeyEvent {
+            physical: u16::try_from(input.physical_key).map_err(|_| INVALID_ARGUMENT)?,
             key: match input.value {
                 1 => Key::Enter,
                 2 => Key::Backspace,
                 3 => Key::Delete,
                 4 => Key::SelectAll,
                 5 => Key::Escape,
-                6 => Key::Other(1),
-                65536..=131071 => Key::Other((input.value - 65536) as u16),
+                6 => Key::Other,
                 _ => return Err(INVALID_ARGUMENT),
             },
             pressed: input.kind == 14,
@@ -511,6 +513,24 @@ pub unsafe extern "C" fn twui_apply(
             let input = convert_input(read_sized(input)?, app)?;
             let result = app.apply(input).map_err(app_error)?;
             consumed.write(disposition(result));
+            Ok(())
+        })
+    }
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twui_key_effect_allowed(
+    context: *mut Context,
+    physical_key: u32,
+    allowed: *mut u32,
+) -> u32 {
+    // SAFETY: all foreign pointers obey the public ABI contract.
+    unsafe {
+        with_context(context, |app| {
+            if allowed.is_null() {
+                return Err(INVALID_ARGUMENT);
+            }
+            let physical = u16::try_from(physical_key).map_err(|_| INVALID_ARGUMENT)?;
+            allowed.write(u32::from(app.ui().can_apply_key_effect(physical)));
             Ok(())
         })
     }
@@ -754,7 +774,11 @@ pub unsafe extern "C" fn twui_pointer(
                     app.apply(tilewright_ui::Input::Activate(tilewright_ui::SUBMIT))
                         .map_err(app_error)?,
                 ),
-                Some(tilewright_ui::WORLD) => u32::from(!app.ui().control().world_input_allowed),
+                Some(tilewright_ui::WORLD) => {
+                    app.apply(tilewright_ui::Input::Focus(None))
+                        .map_err(app_error)?;
+                    u32::from(!app.ui().control().world_input_allowed)
+                }
                 _ => 1,
             };
             consumed.write(value);

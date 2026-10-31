@@ -21,7 +21,15 @@ held world input even if the final `world_input_allowed` value is true.
 
 Text commands carry generation, control epoch and text revision. Obtain these
 from `twui_get_state` at event capture; do not replace an old queued event's
-identity with current values. Prepare does not display: acknowledge only after
+identity with current values. Key input also carries a stable physical identity
+independent of its semantic meaning, so Return and Numpad Enter remain distinct.
+Apply a key successfully and query `twui_key_effect_allowed` before clipboard or
+other host editing effects. Consumed events may be quarantined and do not alone
+authorize those effects. `twui_move_visual` also checks physical ownership. A
+valid world click clears composer focus and preedit before handoff; re-sample
+the control epoch before applying world input.
+
+Prepare does not display: acknowledge only after
 a successful serialized host presentation. Discard only frames guaranteed never
 to present. Invalidate the surface before resize, transform change or loss.
 

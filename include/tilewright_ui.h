@@ -51,7 +51,9 @@ typedef struct twui_config {
  * scalar start/length (UINT64_MAX means SDL unknown -1). Text/edit/preedit calls carry the target generation,
  * control epoch and text revision obtained from state; stale targets fail.
  * SET_FOCUS, SET_MODAL, SET_SUSPENDED, SET_WINDOW_FOCUS use value (0 or 1).
- * KEY_DOWN/KEY_UP use value from TWUI_KEY_*. SCROLL uses signed delta.
+ * KEY_DOWN/KEY_UP use value from TWUI_KEY_* and a stable physical_key in
+ * 0..65535 (for example an SDL scancode). Different physical keys MUST keep
+ * distinct identities even when both mean Enter. SCROLL uses signed delta.
  * Unused fields must be zero. A physical key is distinct from committed text.
  */
 #define TWUI_COMMIT UINT32_C(1)
@@ -74,9 +76,8 @@ typedef struct twui_config {
 #define TWUI_KEY_DELETE UINT32_C(3)
 #define TWUI_KEY_SELECT_ALL UINT32_C(4)
 #define TWUI_KEY_ESCAPE UINT32_C(5)
-#define TWUI_KEY_WORLD UINT32_C(6)
-/* Other distinct host physical keys: BASE + a stable uint16_t key identity. */
-#define TWUI_KEY_PHYSICAL_BASE UINT32_C(65536)
+#define TWUI_KEY_OTHER UINT32_C(6)
+#define TWUI_KEY_WORLD TWUI_KEY_OTHER
 typedef struct twui_input {
     uint32_t struct_size, kind, value, reserved;
     const uint8_t *text;
@@ -84,6 +85,7 @@ typedef struct twui_input {
     uint64_t widget_generation, control_epoch, text_revision;
     int32_t delta;
     uint32_t key_repeat; /* 0/1, only KEY_DOWN; other kinds require zero */
+    uint32_t physical_key; /* 0..65535 for key events; zero for other kinds */
 } twui_input;
 
 typedef struct twui_state {
@@ -117,6 +119,9 @@ twui_status twui_destroy(twui_context *context);
 /* consumed is required; 1 means UI-owned, 0 means unhandled. Errors do not
  * permit world routing. Re-sample control after every input/lifecycle call. */
 twui_status twui_apply(twui_context *context, const twui_input *input, uint32_t *consumed);
+/* After a successful key apply, gate clipboard/navigation/host edit effects
+ * with this query. Consumed alone also includes quarantined presses. */
+twui_status twui_key_effect_allowed(twui_context *context, uint32_t physical_key, uint32_t *allowed);
 twui_status twui_get_state(twui_context *context, twui_state *out_state);
 twui_status twui_get_control(twui_context *context, twui_control *out_control);
 /* Copy protocol: required reports exact bytes (no NUL). null buffer with zero
@@ -142,8 +147,9 @@ twui_status twui_ack_presented(twui_context *context, const twui_stamp *stamp);
 twui_status twui_discard_prepared(twui_context *context, const twui_stamp *stamp);
 twui_status twui_get_displayed(twui_context *context, twui_stamp *out_stamp);
 twui_status twui_invalidate_surface(twui_context *context);
-/* Only an explicit current WORLD hit can be unhandled; panel gaps and
- * points outside the viewport are consumed. */
+/* Only an explicit current WORLD hit can be unhandled; it clears text focus
+ * and composition first. Re-sample the control epoch before world handoff.
+ * Panel gaps and points outside the viewport are consumed. */
 twui_status twui_pointer(twui_context *context, const twui_stamp *stamp, float x, float y, uint32_t *consumed);
 /* Scroll only a positive shared HISTORY hit. Only explicit WORLD may be
  * unhandled; other UI regions/outside points consume without scrolling. */
@@ -188,8 +194,10 @@ twui_status twui_copy_rgba(twui_context *context, const twui_stamp *stamp,
  */
 twui_status twui_get_ime_rect(twui_context *context, const twui_stamp *stamp, twui_rect *out_rect);
 /* Uses the exact displayed shaped layout. motion: 1 left, 2 right, 3 home,
- * 4 end. extend is 0/1. Composition must be committed/cancelled first. */
-twui_status twui_move_visual(twui_context *context, const twui_stamp *stamp, uint32_t motion, uint32_t extend);
+ * 4 end. extend is 0/1. Apply the physical key successfully first; this call
+ * requires its active UI-owned, nonquarantined press. Composition must be
+ * committed/cancelled first. An ownership failure returns STALE. */
+twui_status twui_move_visual(twui_context *context, const twui_stamp *stamp, uint32_t physical_key, uint32_t motion, uint32_t extend);
 #endif
 
 #ifdef __cplusplus

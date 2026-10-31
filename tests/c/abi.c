@@ -57,6 +57,54 @@ static int wrong_thread(void *opaque) {
     assert(twui_destroy(ctx) == TWUI_WRONG_THREAD);
     return 0;
 }
+static void independent_physical_keys(void) {
+    twui_config cfg = TWUI_CONFIG_INIT;
+    twui_context *ctx = NULL;
+    assert(twui_create(&cfg, &ctx) == TWUI_OK);
+    toggle(ctx, TWUI_SET_FOCUS, 1);
+    twui_input preedit = input(ctx, TWUI_PREEDIT);
+    preedit.text = (const uint8_t *)"x"; preedit.text_len = 1;
+    assert(apply(ctx, preedit) == TWUI_OK);
+    twui_input enter = input(ctx, TWUI_KEY_DOWN);
+    enter.value = TWUI_KEY_ENTER; enter.physical_key = 40;
+    assert(apply(ctx, enter) == TWUI_OK);
+    twui_input keypad = enter; keypad.physical_key = 88;
+    assert(apply(ctx, keypad) == TWUI_OK);
+    commit(ctx, "confirmed");
+    enter.kind = TWUI_KEY_UP;
+    assert(apply(ctx, enter) == TWUI_OK);
+    assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
+    twui_action action = {0}; action.struct_size = sizeof action;
+    assert(twui_peek_action(ctx, &action) == TWUI_EMPTY);
+    expect_text(ctx, "confirmed");
+    keypad.kind = TWUI_KEY_UP;
+    assert(apply(ctx, keypad) == TWUI_OK);
+    assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
+    assert(twui_peek_action(ctx, &action) == TWUI_OK);
+    assert(twui_ack_action(ctx, action.batch_id) == TWUI_OK);
+
+    twui_input key = input(ctx, TWUI_KEY_DOWN);
+    key.value = TWUI_KEY_OTHER; key.physical_key = 30;
+    uint32_t allowed = 99, consumed = 99;
+    assert(twui_apply(ctx, &key, &consumed) == TWUI_OK && consumed == 1);
+    assert(twui_key_effect_allowed(ctx, 30, &allowed) == TWUI_OK && allowed == 1);
+    toggle(ctx, TWUI_SET_MODAL, 1); toggle(ctx, TWUI_SET_MODAL, 0);
+    toggle(ctx, TWUI_SET_FOCUS, 1);
+    key.key_repeat = 1;
+    assert(twui_apply(ctx, &key, &consumed) == TWUI_OK && consumed == 1);
+    assert(twui_key_effect_allowed(ctx, 30, &allowed) == TWUI_OK && allowed == 0);
+    key.kind = TWUI_KEY_UP; key.key_repeat = 0;
+    assert(apply(ctx, key) == TWUI_OK);
+    key.kind = TWUI_KEY_DOWN;
+    assert(apply(ctx, key) == TWUI_OK);
+    assert(twui_key_effect_allowed(ctx, 30, &allowed) == TWUI_OK && allowed == 1);
+    twui_state before = state(ctx);
+    key.physical_key = 65536;
+    assert(apply(ctx, key) == TWUI_INVALID_ARGUMENT);
+    assert(twui_key_effect_allowed(ctx, 65536, &allowed) == TWUI_INVALID_ARGUMENT);
+    unchanged(before, state(ctx));
+    assert(twui_destroy(ctx) == TWUI_OK);
+}
 int main(void) {
     assert(twui_abi_version() == TWUI_ABI_VERSION);
     assert(twui_destroy(NULL) == TWUI_INVALID_ARGUMENT);
@@ -89,18 +137,18 @@ int main(void) {
     toggle(ctx, TWUI_SET_FOCUS, 1);
     for (uint32_t key = 0; key < 300; ++key) {
         twui_input pressed = input(ctx, TWUI_KEY_DOWN);
-        pressed.value = TWUI_KEY_PHYSICAL_BASE + key;
+        pressed.value = TWUI_KEY_OTHER; pressed.physical_key = key;
         uint32_t owned = 0;
         assert(twui_apply(ctx, &pressed, &owned) == TWUI_OK && owned == 1);
     }
     twui_input endpoint = input(ctx, TWUI_KEY_DOWN);
-    endpoint.value = TWUI_KEY_PHYSICAL_BASE + UINT16_MAX;
+    endpoint.value = TWUI_KEY_OTHER; endpoint.physical_key = UINT16_MAX;
     assert(apply(ctx, endpoint) == TWUI_OK);
     toggle(ctx, TWUI_SET_WINDOW_FOCUS, 0);
     toggle(ctx, TWUI_SET_WINDOW_FOCUS, 1);
     for (uint32_t key = 0; key < 300; ++key) {
         twui_input released = input(ctx, TWUI_KEY_UP);
-        released.value = TWUI_KEY_PHYSICAL_BASE + key;
+        released.value = TWUI_KEY_OTHER; released.physical_key = key;
         uint32_t owned = 0;
         assert(twui_apply(ctx, &released, &owned) == TWUI_OK && owned == 1);
     }
@@ -132,6 +180,20 @@ int main(void) {
     assert(twui_scroll_at(ctx, &routing_stamp, 10, 350, 1, &routing_consumed) == TWUI_STALE);
 
     assert(twui_invalidate_surface(ctx) == TWUI_OK);
+    toggle(ctx, TWUI_SET_FOCUS, 1);
+    twui_input pending_composition = input(ctx, TWUI_PREEDIT);
+    pending_composition.text = (const uint8_t *)"preedit";
+    pending_composition.text_len = 7;
+    assert(apply(ctx, pending_composition) == TWUI_OK);
+    assert(twui_prepare(ctx, &routing_vp, &routing_stamp) == TWUI_OK);
+    assert(twui_ack_presented(ctx, &routing_stamp) == TWUI_OK);
+    uint64_t focus_epoch = control(ctx).epoch;
+    assert(twui_pointer(ctx, &routing_stamp, 10, 10, &routing_consumed) == TWUI_OK && routing_consumed == 0);
+    assert(state(ctx).focused == 0 && state(ctx).preedit_bytes == 0);
+    assert(control(ctx).epoch > focus_epoch && control(ctx).world_input_allowed == 1);
+    assert(twui_pointer(ctx, &routing_stamp, 10, 10, &routing_consumed) == TWUI_STALE);
+    assert(twui_invalidate_surface(ctx) == TWUI_OK);
+
 
     toggle(ctx, TWUI_SET_FOCUS, 1);
     commit(ctx, "e\xcc\x81 \xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x92\xbb");
@@ -151,7 +213,7 @@ int main(void) {
     assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
     commit(ctx, "second"); before = state(ctx);
     assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_QUEUE_FULL); unchanged(before, state(ctx));
-    twui_input enter = input(ctx, TWUI_KEY_DOWN); enter.value = TWUI_KEY_ENTER;
+    twui_input enter = input(ctx, TWUI_KEY_DOWN); enter.value = TWUI_KEY_ENTER; enter.physical_key = 40;
     assert(apply(ctx, enter) == TWUI_QUEUE_FULL); unchanged(before, state(ctx));
     twui_action a = {0}; a.struct_size = sizeof a;
     assert(twui_peek_action(ctx, &a) == TWUI_OK && a.kind == 1);
@@ -203,6 +265,7 @@ int main(void) {
         ctx = NULL; assert(twui_create(&cfg, &ctx) == TWUI_OK);
         assert(twui_destroy(ctx) == TWUI_OK);
     }
+    independent_physical_keys();
     puts("C17 ABI: validation, UTF-8, atomic backpressure, control, stamps, thread and 256 lifecycle checks passed");
     return 0;
 }
