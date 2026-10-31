@@ -28,7 +28,7 @@ native HTML controls over the rendered world and preserves the same semantic
 model. Build and browser tests do not establish OS IME, screen-reader or Classic
 integration support; those capabilities require their own actual host evidence.
 
-Rust 1.97.1 is pinned. The renderer dependency targets the independent `0.6.1`
+Rust 1.97.1 is pinned. The renderer dependency targets the independent `0.6.2`
 family, whose publication is being prepared. Before checks, prepare the
 separately licensed font data outside the checkout and, once that family is
 published, resolve the real registry lock:

@@ -36,7 +36,7 @@ names need not change merely to adopt common widgets.
 
 ## Migration order
 
-- Use the separately reviewed renderer `0.6.1` successor. UI/app packages use
+- Use the separately reviewed renderer `0.6.2` successor. UI/app packages use
   their own future version sequence and preserve earlier immutable artifacts.
 - Prove the shared chat/input/modal slice in standalone hosts.
 - Adopt one editor control path without changing document or transaction

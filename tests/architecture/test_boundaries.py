@@ -75,15 +75,20 @@ class Boundaries(unittest.TestCase):
         self.assertTrue(any("forbidden edge" in e for e in POLICY.check(self.root)))
 
     def test_renderer_recovery_cohort_is_pinned(self):
-        self.add('\n[dependencies]\ntilewright-scene = "=0.6.1"\n', "tilewright-ui-render")
+        self.add('\n[dependencies]\ntilewright-scene = "=0.6.2"\n', "tilewright-ui-render")
         self.assertEqual(POLICY.check(self.root), [])
         path = self.root / "crates/tilewright-ui-render/Cargo.toml"
-        path.write_text(path.read_text().replace("=0.6.1", "=0.6.0"))
-        self.assertTrue(any("must retain =0.6.1" in e for e in POLICY.check(self.root)))
+        current = path.read_text()
+        for previous in ("=0.6.0", "=0.6.1"):
+            with self.subTest(previous=previous):
+                path.write_text(current.replace("=0.6.2", previous))
+                self.assertTrue(any("must retain =0.6.2" in e for e in POLICY.check(self.root)))
 
     def test_unused_workspace_renderer_pin_is_checked(self):
-        (self.root / "Cargo.toml").write_text('[workspace.dependencies]\ntilewright-render-sdl3 = "=0.6.0"\n')
-        self.assertTrue(any("must use =0.6.1" in e for e in POLICY.check(self.root)))
+        for previous in ("=0.6.0", "=0.6.1"):
+            with self.subTest(previous=previous):
+                (self.root / "Cargo.toml").write_text(f'[workspace.dependencies]\ntilewright-render-sdl3 = "{previous}"\n')
+                self.assertTrue(any("must use =0.6.2" in e for e in POLICY.check(self.root)))
 
 
 if __name__ == "__main__":

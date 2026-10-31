@@ -37,8 +37,8 @@ def check(root):
         errors.append("Cargo.toml: committed dependency overrides are forbidden")
     for alias, entry in inherited.items():
         entry = {"version": entry} if isinstance(entry, str) else entry
-        if entry.get("package", alias) in RENDERER and entry.get("version") != "=0.6.1":
-            errors.append(f"Cargo.toml: renderer dependency {alias} must use =0.6.1")
+        if entry.get("package", alias) in RENDERER and entry.get("version") != "=0.6.2":
+            errors.append(f"Cargo.toml: renderer dependency {alias} must use =0.6.2")
         if any(key in entry for key in ("git", "branch", "rev", "tag", "registry")):
             errors.append(f"Cargo.toml: workspace dependency {alias} has an unreviewed source")
         if "path" in entry:
@@ -102,8 +102,8 @@ def check(root):
                 version = spec.get("version", "")
                 if not version.startswith("=") or any(c in version for c in "*<>^~, "):
                     errors.append(f"{prefix}: external dependency {alias} needs one exact version")
-                if dependency in RENDERER and version != "=0.6.1":
-                    errors.append(f"{prefix}: renderer dependencies must retain =0.6.1")
+                if dependency in RENDERER and version != "=0.6.2":
+                    errors.append(f"{prefix}: renderer dependencies must retain =0.6.2")
     for name in ("tilewright-ui", "tilewright-app", "tilewright-ui-render"):
         if name not in packages:
             errors.append(f"missing required package {name}")
