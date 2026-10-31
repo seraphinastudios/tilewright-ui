@@ -63,3 +63,10 @@ Unit checks: `node --test examples/web/*.test.mjs` (Node 24 or 26). Rust bridge
 checks run with `cargo test -p tilewright-ui-web`. Browser, OS IME, clipboard
 permissions and assistive technology acceptance require actual host evidence;
 unit tests do not qualify them.
+
+`browser.test.mjs` requires generated `pkg/`, Node 24/26, Chromium and
+playwright-core already installed in the private pinned test image. Run it
+separately from the fast boundary tests. It qualifies real WASM execution and
+both explicit renderer backends using a neutral canvas, but does not qualify
+browser-native composition events, accessibility, clipboard permission prompts,
+or a complete DOM presenter.
