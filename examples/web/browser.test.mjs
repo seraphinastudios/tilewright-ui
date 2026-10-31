@@ -16,7 +16,7 @@ const server = createServer(async (request,response) => {
   if (path === '/') { response.setHeader('Content-Type','text/html'); response.end('<!doctype html><html lang="en"><title>Shared UI boundary proof</title><body><canvas id="world" width="640" height="360"></canvas></body></html>'); return; }
   try {
     const data = await readFile(directory + path);
-    response.setHeader('Content-Type',path.endsWith('.wasm') ? 'application/wasm' : 'text/javascript'); response.end(data);
+    response.setHeader('Content-Type',path.endsWith('.wasm')?'application/wasm':path.endsWith('.html')?'text/html':path.endsWith('.css')?'text/css':path.endsWith('.ttf')?'font/ttf':path.endsWith('.json')?'application/json':'text/javascript'); response.end(data);
   } catch { response.writeHead(404).end(); }
 });
 
@@ -90,4 +90,71 @@ test('real Chromium executes shared WASM state and renderer backends', {timeout:
     assert.equal(result.backends.length,2); assert.deepEqual(errors,[]);
     console.log(JSON.stringify({browser:await browser.version(),...result}));
   } finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); }
+});
+
+
+test('DOM presenter commits native editing, modal focus, scrolling and clipboard safely', {timeout:120000}, async () => {
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  let browser;
+  try {
+    browser=await chromium.launch({headless:true,args:['--no-sandbox','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-vulkan=swiftshader','--use-angle=swiftshader','--use-webgpu-adapter=swiftshader']});
+    const page=await browser.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${server.address().port}/index.html?backend=webgl2`);
+    await page.waitForFunction(()=>globalThis.demo);
+    const input=page.getByRole('textbox',{name:'Message'});
+    await input.fill('A👩🏽‍💻');await input.press('End');await input.press('Backspace');
+    assert.equal(await input.inputValue(),'A');
+    await input.press('Control+a');await page.keyboard.insertText('é שלום مرحبا नमस्ते 日本語 한국어');
+    assert.equal(await page.evaluate(()=>demo.snapshot().text),'é שלום مرحبا नमस्ते 日本語 한국어');
+    await input.fill('<img src=x onerror=alert(1)>');await page.getByRole('button',{name:'Send',exact:true}).click();
+    assert.equal(await page.locator('.chat-history li').last().textContent(),'<img src=x onerror=alert(1)>');
+    assert.equal(await page.locator('.chat-history img').count(),0);
+    assert.equal(await input.inputValue(),'');
+    await input.fill('draft');
+    await input.evaluate(node=>{
+      node.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
+      node.value='draft漢字';node.setSelectionRange(node.value.length,node.value.length);
+      node.dispatchEvent(new CompositionEvent('compositionupdate',{data:'漢字',bubbles:true}));
+      node.dispatchEvent(new InputEvent('input',{inputType:'insertCompositionText',data:'漢字',isComposing:true,bubbles:true}));
+    });
+    await input.press('Enter');
+    assert.equal(await page.evaluate(()=>demo.app.peek_actions()),'null');
+    assert.equal(await page.evaluate(()=>demo.snapshot().composing),true);
+    await input.evaluate(node=>node.dispatchEvent(new CompositionEvent('compositionend',{data:'漢字',bubbles:true})));
+    await page.waitForFunction(()=>demo.snapshot().text==='draft漢字'&&!demo.snapshot().composing);
+    await page.getByRole('button',{name:'Open modal'}).click();
+    assert.equal(await page.getByRole('dialog').isVisible(),true);
+    assert.equal(await page.evaluate(()=>demo.snapshot().control.worldAllowed),false);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(()=>!document.querySelector('dialog').open);
+    assert.equal(await input.evaluate(node=>node===document.activeElement),true);
+    await page.evaluate(()=>demo.change(()=>{for(let i=0;i<30;i+=1)demo.app.receive(`line ${i}`);}));
+    await page.getByRole('button',{name:'Older messages'}).click();
+    assert.equal(await page.evaluate(()=>demo.snapshot().scroll),1);
+    assert.equal(await page.locator('.chat-history li').last().textContent(),'line 28');
+    await page.getByRole('button',{name:'Newer messages'}).click();
+    assert.equal(await page.evaluate(()=>demo.snapshot().scroll),0);
+    await input.fill('unchanged');
+    await page.evaluate(()=>{demo.options.clipboard={readText:async()=>{throw new Error('Permission denied');}};});
+    await page.getByRole('button',{name:'Paste',exact:true}).click();
+    await page.waitForFunction(()=>demo.status.textContent.includes('Permission denied'));
+    assert.equal(await input.inputValue(),'unchanged');
+    await page.evaluate(()=>{demo.options.clipboard={readText:()=>new Promise(resolve=>{globalThis.finishClipboard=resolve;})};});
+    await page.getByRole('button',{name:'Paste',exact:true}).click();
+    await input.fill('newer');await page.evaluate(()=>finishClipboard('stale'));
+    await page.waitForFunction(()=>demo.status.textContent.includes('Stale'));
+    assert.equal(await input.inputValue(),'newer');
+    const reserved=await input.evaluate(node=>{
+      const event=new KeyboardEvent('keydown',{key:'l',code:'KeyL',ctrlKey:true,bubbles:true,cancelable:true});node.dispatchEvent(event);return !event.defaultPrevented;
+    });assert.equal(reserved,true);
+    await page.locator('canvas').click();await page.keyboard.down('w');
+    assert.match(await page.locator('.world-state').textContent(),/KeyW/);
+    await input.click();await page.keyboard.up('w');
+    assert.equal(await page.locator('.world-state').textContent(),'World controls released');
+    const stale=await page.evaluate(()=>{const stamp=demo.stamp;demo.app.receive('pending patch');try{demo.app.validate_displayed(stamp);return false;}catch{return true;}finally{demo.render();}});
+    assert.equal(stale,true);
+    assert.deepEqual(errors,[]);
+    console.log(JSON.stringify({dom:true,browser:await browser.version(),text:await input.inputValue(),fontFaces:await page.evaluate(()=>document.fonts.size)}));
+    await page.evaluate(()=>demo.dispose());
+  } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}
 });

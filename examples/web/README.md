@@ -1,88 +1,84 @@
-# Unpublished browser adapter
+# Browser chat and world prototype
 
-`tilewright-ui-web` wraps the same `tilewright-app` and `tilewright-ui` as the
-native and C hosts. JavaScript receives immutable snapshots and tokens, never an
-independent widget model. The browser presentation choice is still pending;
-these modules supply the presentation-independent boundary.
+This unpublished example runs the shared Rust application through native HTML
+editing and semantic elements above a Tilewright WebGPU/WebGL2 world. DOM is the
+reversible initial presenter; pixel-identical text with native hosts is not
+promised. The JavaScript host owns event conversion, presentation commits and
+the local echo effect. Widget text, selection, composition, history, focus,
+modal state, scrolling, output batches and revisions remain in shared Rust.
 
-`build.sh` requires the pinned Rust toolchain, wasm target, and wasm-bindgen
-0.2.127 already installed. It uses the workspace lock and produces an ignored
-`pkg/` ES module beside its wasm file. No CDN, runtime download, game assets or
-private account is used. Serve the directory over localhost to import the module.
+## Run locally
 
-```js
-import { createUi, createWorld } from './load.mjs';
-const app = await createUi();
-app.focus(true);
-const state = JSON.parse(app.snapshot());
-app.replace('Hello 👩🏽‍💻', 13, 13,
-  state.generation, state.control.epoch, state.textRevision);
-// Always re-read the snapshot after a successful mutation.
-```
+Use the pinned Rust toolchain, wasm32 target, wasm-bindgen 0.2.127 and Python 3
+already installed. Set `TILEWRIGHT_UI_FONT_ROOT` to the verified 17-font Noto
+pack, then run `examples/web/build.sh` from this repository. Serve
+`examples/web/` on localhost, for example with `python3 -m http.server --directory
+examples/web 8080`, and open `/index.html`. Add `?backend=webgl2` or
+`?backend=webgpu` for an explicit backend. Failure reports a visible error;
+there is no Canvas 2D world fallback or runtime asset discovery/download.
 
-Use the `load.mjs` facade for browser calls: it applies `exactText` before
-passing browser strings to wasm and rejects unmatched UTF-16 surrogates that wasm-bindgen would otherwise
-silently replace. Selection offsets accepted by `replace` and `select` use DOM
-UTF-16 units. Rust converts to exact UTF-8 offsets; the shared model validates
-complete grapheme boundaries. IDs/revisions are decimal strings checked as u64,
-not imprecise JavaScript numbers or wrapping BigInt coercions.
+The build stages fonts into ignored `assets/font-pack/` and WASM into ignored
+`pkg/`. `stage-fonts.py` validates every font and OFL notice before copying and
+retains the complete provenance manifest. The browser checks the exact manifest
+and font digests before installing explicit `FontFace` resources. This is the
+same `tilewright-unicode-noto-v1` pack as the native example, from Google Fonts
+revision `6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec`; its manifest SHA-256 is
+`94b81a712fb41a66eb744c88ae2ed312cc5d0ec1a491e9821fcc278d99410f13`.
+Coverage is the pack's declared repertoire, not every Unicode scalar or shaping
+sequence. No font bytes enter the library crates.
 
-A host routes browser input only once: native `input` supplies a complete value
-and selection through `replace`; it must not also implement Backspace/Delete
-through keydown. During IME, send `preedit` separately and do not submit Enter.
-At composition completion, `replace` atomically accepts the complete native
-value and selection, including cancellation of transient preedit. If validation
-fails, restore the authoritative snapshot. Only the current generation, control
-epoch and text revision can edit. Browser composition events do not expose a
-portable candidate selection; the preedit selection is explicitly unavailable.
+## Interaction and integration
 
-After applying a snapshot, synchronously measure the actual presentation,
-`prepare(width,height,scale)`, then `ack_presented` that exact returned stamp
-only once the matching presentation commit succeeds. Before pointer-based
-selection call `select` with that stamp. Resizing or changing transforms must
-call `invalidate_surface` before further geometric input. Failed commits must
-call `discard_prepared`, never acknowledge. A rendering callback alone does not
-prove monitor scanout. Retained prepared frames are bounded by the shared app.
+Type in Message, send with Enter or Send, and use the older/newer controls or
+history wheel to scroll. Paste reads the browser clipboard only on activation.
+Open modal traps keyboard focus and cancels held world controls. With focus
+outside the panel, pressed physical keys appear in the world-control readout;
+this illustrates cancellation and issues no gameplay commands.
 
-`peek_actions` is non-destructive. Accept each batch once under a host context
-identity, then call `ack_actions` with its exact ID. Do not add a local retry
-queue or clear the composer before submit succeeds. `PressOwnership` observes
-every control epoch and quarantines held releases across cancellation, even if
-world permission becomes true again. `ClipboardRead` permits one request at a
-time and applies completion only against its originating widget/revision.
-Cancellation, rejection, denied permission and malformed clipboard strings do
-not edit the current draft.
+`load.mjs` is the safe JavaScript entry point. It rejects unmatched UTF-16
+surrogates before wasm-bindgen could replace them. Browser selection offsets
+are checked as finite integers and translated to UTF-8; the shared model checks
+grapheme boundaries. IDs and revisions cross as checked decimal strings.
 
-`createWorld(canvas,width,height,'auto')` renders the existing Tilewright
-renderer testkit's neutral procedural world through released WGPU APIs. Explicit
-`webgpu` or `webgl2` choices never fall back. There is no Canvas 2D world fallback.
-Call `render` to present and `free` only after no call can reuse the object.
+Native `beforeinput`/`input` supplies one complete value and selection;
+Backspace/Delete are never also applied by keydown. Composition updates remain
+transient, Enter cannot submit during composition, and completion commits the
+whole native value atomically with exact owner/revision fencing. The browser
+owns native candidate positioning; composition events do not expose a reliable
+candidate selection, so that capability is explicitly unavailable to Rust.
 
-Unit checks: `node --test examples/web/boundary.test.mjs examples/web/clipboard.test.mjs` (Node 24 or 26). Rust bridge
-checks run with `cargo test -p tilewright-ui-web`. Browser, OS IME, clipboard
-permissions and assistive technology acceptance require actual host evidence;
-unit tests do not qualify them.
+DOM patches measure current bounds/scroll positions synchronously and acknowledge
+the exact prepared revision. Stale pointer selection is refused. Resize, scroll,
+DPI and host lifecycle changes invalidate or refresh presentation. Consumers
+changing CSS transforms themselves must call `app.invalidate_surface()` before
+`render()`. This commit boundary does not claim literal monitor scanout.
 
-`browser.test.mjs` requires generated `pkg/`, Node 24/26, Chromium and
-playwright-core already installed in the private pinned test image. Run it
-separately from the fast boundary tests. It qualifies real WASM execution and
-both explicit renderer backends using a neutral canvas, but does not qualify
-browser-native composition events, accessibility, clipboard permission prompts,
-or a complete DOM presenter.
+Action batches use non-destructive peek and explicit acknowledgment. The demo
+records the most recent accepted batch ID before acknowledging, and keeps no
+unbounded retry queue. `autoAccept:false` permits backpressure experiments.
+Clipboard reads are limited to one outstanding request and carry the originating
+widget, control epoch and text revision. Denial or stale completion cannot edit
+a newer draft.
 
-Physical key ownership uses a checked, nonzero u16 identity distinct from the
-semantic command. `browserKey(app,event,pressed)` maps browser `event.code` to a
-stable local identity, including distinct Enter/NumpadEnter and left/right
-modifiers. Unknown codes are unsupported and must not acquire world controls or
-trigger custom effects. The bridge submits only Enter/Escape semantics; native
-Backspace, Delete and text input are applied through `input` once. IME-marked
-key events carry no submit semantic. `consumed` controls routing; custom visual,
-selection or clipboard key effects additionally require `keyEffects === true`
-after the successful key call. A quarantined repeat may be consumed while
-`keyEffects` is false. Releases always use the original physical code.
+`browserKey` maps `event.code` to stable physical IDs, including distinct
+Enter/NumpadEnter and left/right modifiers. Unknown codes do not acquire world
+controls. Routing consumption does not blanket-cancel browser defaults or
+reserved shortcuts. Custom key effects require a fresh `key_effects(physical)`
+check; `ClipboardRead.pasteKey` performs that check before starting a keyboard
+clipboard request. A consumed quarantined repeat is not eligible for effects.
 
-For a keyboard-triggered clipboard read use `ClipboardRead.pasteKey(app,
-physicalCode(event.code))`, which rechecks current ownership before starting the
-request. `key_effects(physical)` similarly fences synchronous custom key effects
-at their point of use; do not cache a previous true result across input/lifecycle
-calls. Direct `paste` remains available for a separate explicit button action.
+## Validation limits
+
+Run boundary checks with Node 24/26:
+`node --test examples/web/boundary.test.mjs examples/web/clipboard.test.mjs`.
+Run Rust checks with `cargo test -p tilewright-ui-web`.
+
+The private pinned browser harness stages the verified fonts, builds WASM, and
+runs `browser.test.mjs` with Chromium 156. It exercises native HTML typing,
+selection, Backspace, Ctrl+A, safe text rendering, modal focus, history,
+composition event conversion, stale clipboard permission stubs, physical keys,
+presentation identities and both renderer backends. Synthetic composition
+sequences qualify event conversion, not a real OS IME session. Physical assistive
+technology, browser permission prompts, touch keyboards, browser undo/redo and
+all OS/language combinations remain unqualified. Native HTML semantics and
+labels are present; they do not by themselves establish screen-reader acceptance.

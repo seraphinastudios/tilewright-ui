@@ -20,6 +20,7 @@ export async function createUi() {
   return Object.freeze({
     snapshot:()=>call('snapshot'),
     focus:value=>call('focus',value),
+    focus_widget:value=>call('focus_widget',identity(value)),
     modal:value=>call('modal',value),
     window_focused:value=>call('window_focused',value),
     suspend:value=>call('suspend',value),

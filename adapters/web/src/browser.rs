@@ -5,9 +5,9 @@ use crate::{utf8_to_utf16, utf16_to_utf8};
 use serde_json::{Value, json};
 use tilewright_app::{App, FrameId, GeometryEpoch, PresentationStamp, SurfaceEpoch};
 use tilewright_ui::{
-    Action, BatchId, COMPOSER, ControlEpoch, Disposition, Input, Key, KeyEvent, Limits, SUBMIT,
-    TextCursor, TextRevision, TextSelection, TextTarget, UiRevision, Viewport, WidgetGeneration,
-    WidgetRef,
+    Action, BatchId, COMPOSER, ControlEpoch, Disposition, Input, Key, KeyEvent, Limits, MODAL,
+    SUBMIT, TextCursor, TextRevision, TextSelection, TextTarget, UiRevision, Viewport,
+    WidgetGeneration, WidgetRef,
 };
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -100,6 +100,18 @@ impl BrowserUi {
         self.app
             .apply(Input::Focus(focused.then_some(COMPOSER)))
             .map_err(error)?;
+        Ok(())
+    }
+    /// Semantic DOM element focus, including buttons and modal controls.
+    pub fn focus_widget(&mut self, widget: &str) -> Result<()> {
+        let focus = match widget {
+            "0" => None,
+            "1" => Some(COMPOSER),
+            "2" => Some(SUBMIT),
+            "3" => Some(MODAL),
+            _ => return Err("InvalidInput".into()),
+        };
+        self.app.apply(Input::Focus(focus)).map_err(error)?;
         Ok(())
     }
     pub fn modal(&mut self, open: bool) -> Result<()> {

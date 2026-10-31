@@ -10,3 +10,5 @@ if [[ "$actual" != 'wasm-bindgen 0.2.127' ]]; then
 fi
 cargo build --locked --release --target wasm32-unknown-unknown --package tilewright-ui-web
 wasm-bindgen --target web --out-dir examples/web/pkg "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/tilewright_ui_web.wasm"
+
+python3 examples/web/stage-fonts.py --output examples/web/assets/font-pack

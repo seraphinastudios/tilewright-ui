@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tilewright shared UI prototype</title><link rel="stylesheet" href="./style.css"></head>
+<body><main><h1>Shared chat and world</h1><p class="intro">One Rust interaction model, native browser editing, and a Tilewright world.</p><div id="demo"></div></main><script type="module">import {createDemo} from './demo.mjs';const root=document.querySelector('#demo');try{globalThis.demo=await createDemo(root,{backend:new URLSearchParams(location.search).get('backend')??'auto'});}catch(error){root.textContent=`Unable to initialize the prototype: ${error.message??error}`;}</script></body>
+</html>
