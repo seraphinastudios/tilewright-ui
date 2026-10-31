@@ -320,3 +320,176 @@ pub unsafe extern "C" fn twui_move_visual(
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copied_fonts_pixels_and_geometry_keep_presentation_identity() {
+        let root = std::path::PathBuf::from(
+            std::env::var_os("TILEWRIGHT_UI_FONT_ROOT")
+                .expect("explicit verified test font root required"),
+        );
+        let entries = tilewright_render_ui::unicode_fonts::FONTS;
+        let bytes: Vec<Vec<u8>> = entries
+            .iter()
+            .map(|font| {
+                let data = std::fs::read(root.join(font.path)).unwrap();
+                assert_eq!(data.len(), font.bytes);
+                data
+            })
+            .collect();
+        let mut fonts: Vec<Font> = entries
+            .iter()
+            .zip(&bytes)
+            .map(|(entry, data)| Font {
+                struct_size: size_of::<Font>() as u32,
+                reserved: 0,
+                family: entry.family.as_ptr(),
+                family_bytes: entry.family.len() as u64,
+                bytes: data.as_ptr(),
+                byte_length: data.len() as u64,
+                sha256: entry.sha256,
+            })
+            .collect();
+        let config = Config {
+            struct_size: size_of::<Config>() as u32,
+            abi_version: 1,
+            message_bytes: 4096,
+            history_messages: 16,
+            history_bytes: 8192,
+            composer_bytes: 4096,
+            queued_batches: 2,
+            prepared_frames: 2,
+        };
+        let mut context = std::ptr::null_mut();
+        // SAFETY: all pointers in this test refer to live, nonaliasing local
+        // storage of sufficient extent. Font backing storage survives the call.
+        unsafe {
+            assert_eq!(twui_create(&config, &mut context), OK);
+            fonts[0].sha256[0] ^= 1;
+            assert_eq!(
+                twui_set_fonts(context, fonts.as_ptr(), fonts.len() as u32),
+                INVALID_ARGUMENT
+            );
+            fonts[0].sha256[0] ^= 1;
+            assert_eq!(
+                twui_set_fonts(context, fonts.as_ptr(), fonts.len() as u32),
+                OK
+            );
+            drop(fonts);
+            drop(bytes); // subsequent rendering must use owned copies
+            assert_eq!(
+                with_context(context, |engine| {
+                    engine
+                        .apply(tilewright_ui::Input::Focus(Some(tilewright_ui::COMPOSER)))
+                        .map_err(app_error)?;
+                    let target = engine.ui().text_target().ok_or(STALE)?;
+                    engine
+                        .apply(tilewright_ui::Input::TextCommit {
+                            target,
+                            text: "A\u{301} אבג مرحبا 👩‍💻".into(),
+                        })
+                        .map_err(app_error)?;
+                    Ok(())
+                }),
+                OK
+            );
+            let viewport = Viewport {
+                struct_size: size_of::<Viewport>() as u32,
+                reserved: 0,
+                width: 640.0,
+                height: 480.0,
+                scale: 1.0,
+                reserved2: 0,
+            };
+            let empty_stamp = Stamp {
+                struct_size: size_of::<Stamp>() as u32,
+                reserved: 0,
+                surface: 0,
+                frame: 0,
+                geometry: 0,
+                ui_revision: 0,
+            };
+            let mut first = Image {
+                struct_size: size_of::<Image>() as u32,
+                width: 0,
+                height: 0,
+                stride: 0,
+                byte_length: 0,
+                stamp: empty_stamp,
+            };
+            assert_eq!(twui_render_prepare(context, &viewport, &mut first), OK);
+            let mut rect = Rect {
+                struct_size: size_of::<Rect>() as u32,
+                reserved: 0,
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+            };
+            assert_eq!(twui_get_ime_rect(context, &first.stamp, &mut rect), STALE);
+            let mut second = first;
+            assert_eq!(twui_render_prepare(context, &viewport, &mut second), OK);
+            let mut third = first;
+            assert_eq!(
+                twui_render_prepare(context, &viewport, &mut third),
+                QUEUE_FULL
+            );
+            let mut required = 0;
+            assert_eq!(
+                twui_copy_rgba(
+                    context,
+                    &second.stamp,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                BUFFER_TOO_SMALL
+            );
+            assert_eq!(required, 640 * 480 * 4);
+            let mut pixels = vec![0u8; required as usize];
+            assert_eq!(
+                twui_copy_rgba(
+                    context,
+                    &second.stamp,
+                    pixels.as_mut_ptr(),
+                    required,
+                    &mut required
+                ),
+                OK
+            );
+            assert!(pixels.chunks_exact(4).any(|pixel| pixel[3] != 0));
+            assert_eq!(twui_ack_presented(context, &second.stamp), OK);
+            assert_eq!(twui_get_ime_rect(context, &second.stamp, &mut rect), OK);
+            assert!(rect.width > 0.0 && rect.height > 0.0);
+            assert_eq!(twui_ack_presented(context, &first.stamp), STALE);
+            assert_eq!(twui_discard_prepared(context, &first.stamp), OK);
+            assert_eq!(
+                twui_copy_rgba(
+                    context,
+                    &first.stamp,
+                    pixels.as_mut_ptr(),
+                    required,
+                    &mut required
+                ),
+                STALE
+            );
+            assert_eq!(twui_move_visual(context, &second.stamp, 1, 0), OK);
+            assert_eq!(twui_get_ime_rect(context, &second.stamp, &mut rect), STALE);
+            assert_eq!(twui_invalidate_surface(context), OK);
+            assert_eq!(
+                twui_copy_rgba(
+                    context,
+                    &second.stamp,
+                    pixels.as_mut_ptr(),
+                    required,
+                    &mut required
+                ),
+                STALE
+            );
+            assert_eq!(twui_destroy(context), OK);
+        }
+    }
+}
