@@ -508,3 +508,114 @@ fn rejected_key_action_cannot_authorize_host_effects() {
     );
     assert!(!ui.can_apply_key_effect(13));
 }
+
+#[test]
+fn explicit_ime_cancel_retires_session_preserving_focus_and_selection() {
+    for escape in [false, true] {
+        let mut ui = ui();
+        commit(&mut ui, "before");
+        let selection = ui.snapshot().composer.selection;
+        let focus = ui.control().focused_widget;
+        ui.apply(Input::Preedit {
+            target: ui.text_target().unwrap(),
+            text: "candidate".into(),
+            start: 0,
+            length: 1,
+        })
+        .unwrap();
+        let retired = ui.text_target().unwrap();
+        let epoch = ui.control().epoch;
+        if escape {
+            physical_key(&mut ui, Key::Escape, 9, true).unwrap();
+        } else {
+            ui.apply(Input::CancelComposition { target: retired })
+                .unwrap();
+        }
+        assert!(ui.control().epoch > epoch);
+        assert_eq!(ui.control().focused_widget, focus);
+        assert_eq!(ui.snapshot().composer.selection, selection);
+        assert_eq!(ui.snapshot().composer.committed, "before");
+        assert_eq!(
+            ui.apply(Input::TextCommit {
+                target: retired,
+                text: "late".into()
+            }),
+            Err(UiError::Stale)
+        );
+        ui.apply(Input::Preedit {
+            target: ui.text_target().unwrap(),
+            text: "fresh".into(),
+            start: 0,
+            length: 1,
+        })
+        .unwrap();
+        assert_eq!(ui.snapshot().composer.composition.unwrap().text, "fresh");
+    }
+}
+
+#[test]
+fn natural_preedit_end_and_commit_do_not_retire_the_platform_session() {
+    let mut ui = ui();
+    let epoch = ui.control().epoch;
+    ui.apply(Input::Preedit {
+        target: ui.text_target().unwrap(),
+        text: "候補".into(),
+        start: 0,
+        length: 1,
+    })
+    .unwrap();
+    ui.apply(Input::Preedit {
+        target: ui.text_target().unwrap(),
+        text: String::new(),
+        start: 0,
+        length: 0,
+    })
+    .unwrap();
+    assert_eq!(ui.control().epoch, epoch);
+    commit(&mut ui, "confirmed");
+    assert_eq!(ui.control().epoch, epoch);
+    ui.apply(Input::Preedit {
+        target: ui.text_target().unwrap(),
+        text: "next".into(),
+        start: 0,
+        length: 1,
+    })
+    .unwrap();
+    ui.apply(Input::ReplaceText {
+        target: ui.text_target().unwrap(),
+        text: "whole".into(),
+        selection: TextSelection::caret(TextCursor::new(5)),
+    })
+    .unwrap();
+    assert_eq!(ui.control().epoch, epoch);
+    ui.apply(Input::CancelComposition {
+        target: ui.text_target().unwrap(),
+    })
+    .unwrap();
+    assert_eq!(ui.control().epoch, epoch);
+}
+
+#[test]
+fn explicit_ime_cancel_preserves_each_held_enter_fence() {
+    let mut ui = ui();
+    ui.apply(Input::Preedit {
+        target: ui.text_target().unwrap(),
+        text: "candidate".into(),
+        start: 0,
+        length: 1,
+    })
+    .unwrap();
+    physical_key(&mut ui, Key::Enter, 13, true).unwrap();
+    physical_key(&mut ui, Key::Enter, 88, true).unwrap();
+    ui.apply(Input::CancelComposition {
+        target: ui.text_target().unwrap(),
+    })
+    .unwrap();
+    commit(&mut ui, "fresh");
+    physical_key(&mut ui, Key::Enter, 13, false).unwrap();
+    ui.apply(Input::Activate(SUBMIT)).unwrap();
+    assert!(ui.peek_actions().is_none());
+    physical_key(&mut ui, Key::Enter, 88, false).unwrap();
+    ui.apply(Input::Activate(SUBMIT)).unwrap();
+    assert!(ui.peek_actions().is_some());
+}

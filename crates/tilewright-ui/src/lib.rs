@@ -322,6 +322,15 @@ impl Ui {
             && self.control.focused_widget.is_none();
         Ok(())
     }
+    // Explicit cancellation retires the platform IME session as well as preedit.
+    // Natural empty preedit and committed text deliberately do not use this path.
+    fn cancel_composition(&mut self) -> Result<(), UiError> {
+        if self.composer.is_composing() {
+            self.composer.cancel_preedit()?;
+            self.barrier()?;
+        }
+        Ok(())
+    }
     fn require_target(&self, target: TextTarget) -> Result<(), UiError> {
         if self.text_target() == Some(target) {
             Ok(())
@@ -489,7 +498,7 @@ impl Ui {
                         Key::SelectAll if !self.composer.is_composing() => {
                             self.composer.select_all()?;
                         }
-                        Key::Escape => self.composer.cancel_preedit()?,
+                        Key::Escape => self.cancel_composition()?,
                         _ => (),
                     }
                 }
@@ -521,7 +530,7 @@ impl Ui {
             }
             Input::CancelComposition { target } => {
                 self.require_target(target)?;
-                self.composer.cancel_preedit()?;
+                self.cancel_composition()?;
             }
             Input::Selection { target, selection } => {
                 self.require_target(target)?;
