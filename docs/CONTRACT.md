@@ -152,9 +152,7 @@ The host owns the SDL window and event loop. Calls occur on the owning thread; r
 
 The C facade preserves peek/ack output and control-epoch semantics. Copying output into a caller buffer must not dequeue it; `BufferTooSmall` preserves it. Frame/geometry stamps cross the boundary intact. The small C host proves linkage and real event/render behavior, while integration with an existing application's compositor is a separate acceptance step.
 
-## Required regression cases
-
-### Embedded panels and field binding
+## Embedded panels and field binding
 
 Each context has an immutable `Composition`: `Demo`, `ChatPanel`, or
 `SingleField`. Existing constructors retain `Demo`. Embedded contexts contain
@@ -190,6 +188,8 @@ The C facade adds opt-in functions and sized structs while retaining ABI 2 and
 the existing layouts. A legacy-created Demo context continues to emit only
 chat actions. New field actions expose their binding identity through
 `twui_get_field_action`. See the installed header for exact buffer ownership.
+
+## Required regression cases
 
 - Fill the action queue; submit with Enter and button; verify unchanged composer/revision, repeat peek, one acknowledgment, and exactly one accepted retry.
 - With the queue full, enter/exit a modal while a world key is held; sample only the final control snapshot and verify epoch-based cancellation still happens. Destroy focused/captured widgets without stuck controls.

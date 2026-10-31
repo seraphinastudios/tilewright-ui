@@ -290,7 +290,8 @@ impl BrowserUi {
                             "text_revision": revision.get().to_string(),
                         }),
                     }).collect::<Vec<_>>(),
-                }).to_string()
+                })
+                .to_string()
             },
         )
     }
