@@ -57,7 +57,7 @@ static void embedded_field(void) {
     preedit.text = (const uint8_t *)"x"; preedit.text_len = 1;
     assert(apply(ctx, preedit) == TWUI_OK);
     twui_state focused = state(ctx);
-    assert(twui_bind_field(ctx, (const uint8_t *)"a\nb", 3, &widget) == TWUI_INVALID_ARGUMENT);
+    assert(twui_bind_field(ctx, (const uint8_t *)"a\nb", 3, &widget) == TWUI_LIMIT_EXCEEDED);
     unchanged(focused, state(ctx));
     assert(twui_bind_field(ctx, (const uint8_t *)"new", 3, &widget) == TWUI_OK);
     twui_state rebound = state(ctx);
@@ -94,7 +94,7 @@ static void embedded_field(void) {
     widget.struct_size = sizeof widget;
     assert(twui_bind_field(ctx, NULL, 1, &widget) == TWUI_INVALID_ARGUMENT);
     assert(twui_bind_field(ctx, (const uint8_t *)"\xff", 1, &widget) == TWUI_INVALID_ARGUMENT);
-    assert(twui_bind_field(ctx, (const uint8_t *)"a\nb", 3, &widget) == TWUI_INVALID_ARGUMENT);
+    assert(twui_bind_field(ctx, (const uint8_t *)"a\nb", 3, &widget) == TWUI_LIMIT_EXCEEDED);
     unchanged(before, state(ctx));
     assert(twui_prepare_current(ctx, &frame) == TWUI_OK);
     assert(twui_ack_presented(ctx, &frame) == TWUI_OK);
