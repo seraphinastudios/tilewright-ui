@@ -107,6 +107,7 @@ fn fonts() -> FontPack {
 #[test]
 #[cfg(feature = "prototype")]
 #[allow(clippy::float_cmp)] // Exact retained geometry is a regression contract.
+#[allow(clippy::too_many_lines)] // One engine lifetime exercises retained in-flight frames.
 fn unicode_geometry_dpi_resources_and_cpu_reference_frame() {
     let mut ui = Ui::new(Limits::default()).unwrap();
     ui.apply(Input::Focus(Some(tilewright_ui::COMPOSER)))
@@ -170,6 +171,25 @@ fn unicode_geometry_dpi_resources_and_cpu_reference_frame() {
         first.editable().unwrap().layout.size(),
         one.editable().unwrap().layout.size()
     );
+    ui.apply(Input::Selection {
+        target: ui.text_target().unwrap(),
+        selection: tilewright_ui::TextSelection {
+            anchor: tilewright_ui::TextCursor::new(0),
+            focus: tilewright_ui::TextCursor::new(3),
+        },
+    })
+    .unwrap();
+    let selected_snapshot = ui.snapshot();
+    let selected_layout = tilewright_ui::layout(&selected_snapshot, layout.viewport).unwrap();
+    let selected = renderer
+        .compile(&selected_snapshot, &selected_layout, [640, 400])
+        .unwrap();
+    assert!(
+        selected
+            .quads
+            .iter()
+            .any(|quad| quad.color == [0.23, 0.40, 0.62, 1.0])
+    );
     renderer.clear_cache();
     ui.apply(Input::Preedit {
         target: ui.text_target().unwrap(),
@@ -232,6 +252,11 @@ fn unicode_geometry_dpi_resources_and_cpu_reference_frame() {
             .compile(&next_snapshot, &bad_layout, [640, 400])
             .is_err()
     );
+    renderer.limits.maximum_primitives = 1;
+    assert!(matches!(
+        renderer.compile(&next_snapshot, &next_layout, [640, 400]),
+        Err(Error::LimitExceeded)
+    ));
     let world = SceneBundle::from_quads(
         1,
         0,

@@ -66,6 +66,8 @@ pub struct TextGeometry {
     pub snapshot: Option<TextInputSnapshot>,
 }
 impl TextGeometry {
+    /// Returns a displayed UTF-8 cursor. For committed selection, map it with
+    /// `snapshot.committed_cursor`, which rejects an interior preedit position.
     pub fn hit(&self, point: [f32; 2]) -> Option<tilewright_ui::TextCursor> {
         self.clip.contains(point[0], point[1]).then(|| {
             neutral_cursor(
@@ -221,6 +223,9 @@ impl UiRenderer {
                     if let Some(input) = &editable {
                         let cursor = renderer_cursor(input.display_selection.focus);
                         let caret = shaped.caret(cursor).ok_or(Error::StaleSnapshot)?;
+                        shaped
+                            .caret(renderer_cursor(input.display_selection.anchor))
+                            .ok_or(Error::StaleSnapshot)?;
                         origin[0] -= (caret.x + caret.width - bounds.width).max(0.0);
                         for selected in shaped.selection_rects(
                             renderer_cursor(input.display_selection.anchor),
@@ -361,7 +366,8 @@ impl CompiledFrame {
             resources: Arc::new(self.resources.with_world(world_resources)),
         })
     }
-    /// Prototype overlay. Host must qualify alpha/compositing behavior.
+    /// Prototype overlay. A transparent clear produces premultiplied RGB from
+    /// the reference renderer; the host must use matching alpha composition.
     pub fn standalone(&self, clear_color: [f32; 4]) -> Result<Presentation, Error> {
         let scene = SceneBundle::from_quads(
             1,

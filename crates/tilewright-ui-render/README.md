@@ -15,6 +15,8 @@ Namespaces are checked again when composing an existing world scene.
 existing renderer. `standalone` creates an overlay. The optional `prototype`
 feature enables `Presentation::render_rgba`, using the existing CPU reference
 renderer; it is not a production GPU path or performance qualification.
+A transparent reference target returns premultiplied RGB; use premultiplied
+composition (or composite onto an opaque background) when uploading it to SDL.
 
 Logical viewport dimensions must be integral. Supply physical dimensions
 explicitly; all paint clipping and DPI transformation happen in the existing
