@@ -58,7 +58,7 @@ pub struct Input {
     pub control_epoch: u64,
     pub text_revision: u64,
     pub delta: i32,
-    pub reserved2: u32,
+    pub key_repeat: u32,
 }
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -398,9 +398,17 @@ pub unsafe extern "C" fn twui_create(config: *const Config, output: *mut *mut Co
     }
 }
 
+fn preedit_offset(value: u64) -> Result<i32> {
+    if value == u64::MAX {
+        Ok(-1)
+    } else {
+        i32::try_from(value).map_err(|_| INVALID_ARGUMENT)
+    }
+}
+
 unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input> {
     use tilewright_ui::{Input as I, *};
-    if input.reserved != 0 || input.reserved2 != 0 {
+    if input.reserved != 0 || input.key_repeat > 1 || (input.kind != 14 && input.key_repeat != 0) {
         return Err(INVALID_ARGUMENT);
     }
     let text_kind = matches!(input.kind, 1 | 2 | 12);
@@ -440,8 +448,8 @@ unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input>
         2 => I::Preedit {
             target: target(&input)?,
             text: text()?,
-            start: i32::try_from(input.anchor).map_err(|_| INVALID_ARGUMENT)?,
-            length: i32::try_from(input.caret).map_err(|_| INVALID_ARGUMENT)?,
+            start: preedit_offset(input.anchor)?,
+            length: preedit_offset(input.caret)?,
         },
         3 => I::CancelComposition {
             target: target(&input)?,
@@ -478,10 +486,11 @@ unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input>
                 4 => Key::SelectAll,
                 5 => Key::Escape,
                 6 => Key::Other(1),
+                65536..=131071 => Key::Other((input.value - 65536) as u16),
                 _ => return Err(INVALID_ARGUMENT),
             },
             pressed: input.kind == 14,
-            repeat: false,
+            repeat: input.key_repeat != 0,
         }),
         _ => return Err(INVALID_ARGUMENT),
     })

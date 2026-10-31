@@ -48,7 +48,7 @@ typedef struct twui_config {
 /* UTF-8 lengths are bytes, never NUL-terminated strings. Embedded NUL, newline
  * and other disallowed single-line controls are rejected by shared semantics.
  * COMMIT/PREEDIT/RECEIVE use text+text_len. SELECT uses UTF-8 anchor/caret bytes. PREEDIT uses anchor/caret as
- * scalar start/length. Text/edit/preedit calls carry the target generation,
+ * scalar start/length (UINT64_MAX means SDL unknown -1). Text/edit/preedit calls carry the target generation,
  * control epoch and text revision obtained from state; stale targets fail.
  * SET_FOCUS, SET_MODAL, SET_SUSPENDED, SET_WINDOW_FOCUS use value (0 or 1).
  * KEY_DOWN/KEY_UP use value from TWUI_KEY_*. SCROLL uses signed delta.
@@ -75,13 +75,15 @@ typedef struct twui_config {
 #define TWUI_KEY_SELECT_ALL UINT32_C(4)
 #define TWUI_KEY_ESCAPE UINT32_C(5)
 #define TWUI_KEY_WORLD UINT32_C(6)
+/* Other distinct host physical keys: BASE + a stable uint16_t key identity. */
+#define TWUI_KEY_PHYSICAL_BASE UINT32_C(65536)
 typedef struct twui_input {
     uint32_t struct_size, kind, value, reserved;
     const uint8_t *text;
     uint64_t text_len, anchor, caret;
     uint64_t widget_generation, control_epoch, text_revision;
     int32_t delta;
-    uint32_t reserved2;
+    uint32_t key_repeat; /* 0/1, only KEY_DOWN; other kinds require zero */
 } twui_input;
 
 typedef struct twui_state {
