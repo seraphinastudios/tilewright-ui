@@ -125,7 +125,13 @@ impl TextInput {
             return Err(UiError::LimitExceeded);
         }
         let selection = TextSelection::caret(TextCursor::new(text.len()));
-        Ok(Self { text, selection, composition: None, revision: TextRevision::new(1)?, max_bytes })
+        Ok(Self {
+            text,
+            selection,
+            composition: None,
+            revision: TextRevision::new(1)?,
+            max_bytes,
+        })
     }
 
     pub fn text(&self) -> &str {
@@ -329,9 +335,7 @@ pub fn scalar_selection_bytes(
     if start == -1 || length == -1 {
         let count = text.chars().count();
         for known in [start, length].into_iter().filter(|value| *value >= 0) {
-            if usize::try_from(known).map_err(|_| UiError::InvalidInput)?
-                > count
-            {
+            if usize::try_from(known).map_err(|_| UiError::InvalidInput)? > count {
                 return Err(UiError::InvalidInput);
             }
         }
@@ -339,9 +343,7 @@ pub fn scalar_selection_bytes(
     }
     let start = usize::try_from(start).map_err(|_| UiError::InvalidInput)?;
     let length = usize::try_from(length).map_err(|_| UiError::InvalidInput)?;
-    let end = start
-        .checked_add(length)
-        .ok_or(UiError::InvalidInput)?;
+    let end = start.checked_add(length).ok_or(UiError::InvalidInput)?;
     let byte_at = |index: usize| {
         text.char_indices()
             .map(|(byte, _)| byte)
@@ -352,14 +354,18 @@ pub fn scalar_selection_bytes(
     Ok(Some(byte_at(start)?..byte_at(end)?))
 }
 
-fn validate_insert(current: &str, range: &Range<usize>, text: &str, max_bytes: usize) -> Result<(), UiError> {
+fn validate_insert(
+    current: &str,
+    range: &Range<usize>,
+    text: &str,
+    max_bytes: usize,
+) -> Result<(), UiError> {
     if range.start > range.end {
         return Err(UiError::InvalidInput);
     }
     validate_cursor(current, TextCursor::new(range.start))?;
     validate_cursor(current, TextCursor::new(range.end))?;
-    if text.len() > max_bytes - (current.len() - range.len())
-        || text.chars().any(char::is_control)
+    if text.len() > max_bytes - (current.len() - range.len()) || text.chars().any(char::is_control)
     {
         return Err(UiError::LimitExceeded);
     }
