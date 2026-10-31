@@ -20,7 +20,8 @@ Native and web host adapters are unpublished workspace examples. Existing
 this repository does not replace it or its independent releases.
 
 Read the [architecture](docs/ARCHITECTURE.md), [interaction contract](docs/CONTRACT.md)
-and [adoption roadmap](docs/ROADMAP.md). The [native Rust example](examples/native/README.md)
+and [adoption roadmap](docs/ROADMAP.md), plus the separate
+[package and release plan](docs/RELEASES.md). The [native Rust example](examples/native/README.md)
 and [C/SDL example](examples/c-sdl/README.md) use the same state and renderer
 through different interfaces. The [browser example](examples/web/README.md) uses
 native HTML controls over the rendered world and preserves the same semantic
