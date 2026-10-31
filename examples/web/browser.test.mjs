@@ -122,6 +122,41 @@ test('DOM presenter commits native editing, modal focus, scrolling and clipboard
     assert.equal(await page.evaluate(()=>demo.snapshot().composing),true);
     await input.evaluate(node=>node.dispatchEvent(new CompositionEvent('compositionend',{data:'漢字',bubbles:true})));
     await page.waitForFunction(()=>demo.snapshot().text==='draft漢字'&&!demo.snapshot().composing);
+    // A surface epoch change cancels its exact preedit and rejects trailing
+    // events even after native focus still points at the same input element.
+    await input.fill('anchor');
+    await input.evaluate(node=>{
+      node.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
+      node.value='anchor候補';node.setSelectionRange(node.value.length,node.value.length);
+      node.dispatchEvent(new CompositionEvent('compositionupdate',{data:'候補',bubbles:true}));
+    });
+    await page.setViewportSize({width:1100,height:780});
+    await page.waitForFunction(()=>!demo.snapshot().composing);
+    await input.evaluate(node=>{
+      node.value='late resize commit';node.setSelectionRange(node.value.length,node.value.length);
+      node.dispatchEvent(new CompositionEvent('compositionend',{data:'候補',bubbles:true}));
+      node.dispatchEvent(new InputEvent('input',{inputType:'insertFromComposition',bubbles:true}));
+    });
+    assert.equal(await input.inputValue(),'anchor');
+    assert.equal(await page.evaluate(()=>demo.snapshot().text),'anchor');
+    await input.press('End');await page.keyboard.type('x');
+    assert.equal(await input.inputValue(),'anchorx');
+    await input.evaluate(node=>{
+      node.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
+      node.value='anchorx候補';node.setSelectionRange(node.value.length,node.value.length);
+      node.dispatchEvent(new CompositionEvent('compositionupdate',{data:'候補',bubbles:true}));
+    });
+    await input.press('Escape');
+    await input.evaluate(node=>{
+      node.value='late cancelled commit';node.setSelectionRange(node.value.length,node.value.length);
+      node.dispatchEvent(new CompositionEvent('compositionend',{data:'候補',bubbles:true}));
+      node.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertFromComposition',bubbles:true,cancelable:true}));
+      node.dispatchEvent(new InputEvent('input',{inputType:'insertFromComposition',bubbles:true}));
+    });
+    assert.equal(await page.evaluate(()=>demo.snapshot().composing),false);
+    assert.equal(await input.inputValue(),'anchorx');
+    await input.press('End');await page.keyboard.type('y');
+    assert.equal(await input.inputValue(),'anchorxy');
     await page.getByRole('button',{name:'Open modal'}).click();
     assert.equal(await page.getByRole('dialog').isVisible(),true);
     assert.equal(await page.evaluate(()=>demo.snapshot().control.worldAllowed),false);
@@ -134,6 +169,14 @@ test('DOM presenter commits native editing, modal focus, scrolling and clipboard
     assert.equal(await page.locator('.chat-history li').last().textContent(),'line 28');
     await page.getByRole('button',{name:'Newer messages'}).click();
     assert.equal(await page.evaluate(()=>demo.snapshot().scroll),0);
+    await page.evaluate(()=>demo.change(()=>demo.app.receive('wrapped '.repeat(200))));
+    const history=page.getByRole('log',{name:'Chat history'});
+    await history.focus();await history.press('PageUp');
+    await page.waitForFunction(()=>{const node=document.querySelector('.chat-history');return node.scrollTop<node.scrollHeight-node.clientHeight-5;});
+    await history.evaluate(node=>{node.scrollTop=0;});
+    await page.waitForFunction(()=>document.querySelector('.chat-history').scrollTop===0);
+    await page.evaluate(()=>demo.render());
+    assert.equal(await history.evaluate(node=>node.scrollTop),0);
     await input.fill('unchanged');
     await page.evaluate(()=>{demo.options.clipboard={readText:async()=>{throw new Error('Permission denied');}};});
     await page.getByRole('button',{name:'Paste',exact:true}).click();

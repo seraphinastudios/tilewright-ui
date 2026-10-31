@@ -33,7 +33,7 @@ class DomHost {
   constructor(root,app,options) {
     this.root=root;this.app=app;this.options=options;this.abort=new AbortController();
     this.clipboard=new ClipboardRead();this.presses=new PressOwnership();this.worldKeys=new Set();
-    this.stamp=null;this.composition=null;this.inputToken=null;this.rendering=false;this.dirty=false;this.disposed=false;this.accepted='0';
+    this.stamp=null;this.composition=null;this.inputToken=null;this.awaitFreshEdit=false;this.presentedScroll=null;this.rendering=false;this.dirty=false;this.disposed=false;this.accepted='0';
     root.classList.add('shared-demo');
     this.canvas=element('canvas',{'aria-label':'Neutral Tilewright world'});
     this.worldState=element('p',{class:'world-state','aria-live':'off'},'World controls released');
@@ -93,53 +93,67 @@ class DomHost {
     if(!this.stamp)throw new Error('Selection waits for a committed layout');
     this.app.select(this.stamp,anchor,focus,...this.target(state));
   }
+  cancelComposition() {
+    const session=this.composition;
+    this.composition=null;this.inputToken=null;
+    if(!session)return;
+    this.awaitFreshEdit=true;
+    const state=this.snapshot();
+    // Cancel only the exact preedit this session produced. A newer independent
+    // owner/revision is never cancelled merely because an old callback arrived.
+    if(state.composing&&state.generation===session.owner[0]&&state.textRevision===session.owner[2]&&state.control.focused==='1')this.app.cancel_composition(...this.target(state));
+  }
+  reconcileComposition() {
+    if(this.composition&&this.composition.owner.some((value,index)=>value!==this.target()[index]))this.cancelComposition();
+  }
   finishInput() {
     const state=this.snapshot();
     const origin=this.composition?.owner??this.inputToken;
-    if(state.control.focused!=='1'||(origin&&(origin[0]!==state.generation||origin[1]!==state.control.epoch||(this.composition&&origin[2]!==state.textRevision)))){
-      this.composition=null;this.inputToken=null;this.render();return;
+    if(!origin||state.control.focused!=='1'||(origin&&(origin[0]!==state.generation||origin[1]!==state.control.epoch||(this.composition&&origin[2]!==state.textRevision)))){
+      this.cancelComposition();this.inputToken=null;this.render();return;
     }
     const direction=this.input.selectionDirection;
     const anchor=direction==='backward'?this.input.selectionEnd:this.input.selectionStart;
     const focus=direction==='backward'?this.input.selectionStart:this.input.selectionEnd;
-    const target=this.composition?this.target(state):(this.inputToken??this.target(state));
-    this.composition=null;this.inputToken=null;
-    this.change(()=>this.app.replace(exactText(this.input.value),anchor,focus,...target));
+    const target=origin;
+    const session=this.composition;this.composition=null;this.inputToken=null;
+    if(!this.change(()=>this.app.replace(exactText(this.input.value),anchor,focus,...target))&&session){this.composition=session;this.cancelComposition();this.render();}
   }
   install() {
     this.on(this.input,'focus',()=>this.change(()=>this.focusFor(this.input)));
     this.on(this.root,'focusin',event=>{if(event.target!==this.input)this.change(()=>this.focusFor(event.target));});
     this.on(this.root,'focusout',event=>{
-      if(event.target===this.input){this.composition=null;this.inputToken=null;this.clipboard.cancel();}
+      if(event.target===this.input){this.cancelComposition();this.inputToken=null;this.clipboard.cancel();}
       this.change(()=>this.focusFor(event.relatedTarget));
     });
     this.on(this.input,'pointerdown',event=>{
-      try {if(!this.stamp)throw new Error('Layout unavailable');this.app.validate_displayed(this.stamp);}
+      try {if(!this.stamp)throw new Error('Layout unavailable');this.app.validate_displayed(this.stamp);this.awaitFreshEdit=false;}
       catch(error){event.preventDefault();this.report(error);}
     });
     this.on(document,'selectionchange',()=>{
       if(document.activeElement===this.input&&!this.composition)this.change(()=>this.syncSelection());
     });
     this.on(this.input,'beforeinput',event=>{
+      if(this.awaitFreshEdit){event.preventDefault();this.render();return;}
       if(event.isComposing||this.composition)return;
       try {this.syncSelection();this.render();this.inputToken=this.target();}
       catch(error){event.preventDefault();this.report(error);this.render();}
     });
     this.on(this.input,'input',event=>{if(!event.isComposing&&(!this.composition||this.composition.ending))this.finishInput();});
     this.on(this.input,'compositionstart',()=>{
-      try {this.syncSelection();this.composition={owner:this.target(),ending:false};}
+      try {this.awaitFreshEdit=false;this.syncSelection();this.composition={owner:this.target(),ending:false};}
       catch(error){this.report(error);}
     });
     this.on(this.input,'compositionupdate',event=>{
       if(!this.composition)return;
       const state=this.snapshot();
-      if(this.composition.owner.some((value,index)=>value!==this.target(state)[index])){this.composition=null;this.render();return;}
+      if(this.composition.owner.some((value,index)=>value!==this.target(state)[index])){this.cancelComposition();this.render();return;}
       this.change(()=>{this.app.preedit(exactText(event.data),...this.target(state));this.composition.owner=this.target();});
     });
     this.on(this.input,'compositionend',()=>{
       if(!this.composition)return;
-      this.composition.ending=true;
-      queueMicrotask(()=>{if(this.composition?.ending&&!this.disposed)this.finishInput();});
+      const session=this.composition;session.ending=true;
+      queueMicrotask(()=>{if(this.composition===session&&!this.disposed)this.finishInput();});
     });
     // Pointer activation keeps the composer selection for Send and Paste.
     for(const button of [this.send,this.pasteButton])this.on(button,'pointerdown',event=>event.preventDefault());
@@ -154,13 +168,13 @@ class DomHost {
     this.on(this.history,'wheel',event=>{event.preventDefault();this.change(()=>this.app.scroll(Math.sign(event.deltaY)));},{passive:false});
     this.on(window,'keydown',event=>this.key(event,true),{capture:true});
     this.on(window,'keyup',event=>this.key(event,false),{capture:true});
-    this.on(window,'blur',()=>{this.composition=null;this.inputToken=null;this.clipboard.cancel();this.change(()=>this.app.window_focused(false));});
+    this.on(window,'blur',()=>{this.cancelComposition();this.inputToken=null;this.clipboard.cancel();this.change(()=>this.app.window_focused(false));});
     this.on(window,'focus',()=>this.change(()=>{this.app.window_focused(true);this.focusFor(document.activeElement);}));
-    this.on(document,'visibilitychange',()=>{this.clipboard.cancel();this.change(()=>{this.app.suspend(document.hidden);if(!document.hidden)this.focusFor(document.activeElement);});});
+    this.on(document,'visibilitychange',()=>{this.cancelComposition();this.clipboard.cancel();this.change(()=>{this.app.suspend(document.hidden);if(!document.hidden)this.focusFor(document.activeElement);});});
     const invalidate=()=>this.change(()=>{this.app.invalidate_surface();this.stamp=null;});
     this.resize=new ResizeObserver(invalidate);this.resize.observe(this.root);
     this.on(window,'resize',invalidate);
-    this.on(window,'scroll',invalidate,{capture:true});
+    this.on(window,'scroll',event=>{if(event.target===this.history)this.render();else invalidate();},{capture:true});
   }
   key(event,pressed) {
     if(this.disposed)return;
@@ -169,6 +183,8 @@ class DomHost {
     const commandEvent=(!inComposer&&event.target!==this.send)||composing?{code:event.code,key:'',repeat:event.repeat,isComposing:composing}:event;
     try {
       const result=browserKey(this.app,commandEvent,pressed);
+      if(pressed&&event.key==='Escape'&&this.composition)this.cancelComposition();
+      if(pressed&&!event.repeat&&!composing&&result.keyEffects&&event.key!=='Escape')this.awaitFreshEdit=false;
       // Routing consumption does not suppress normal browser editing/shortcuts.
       if(result.consumed)event.stopPropagation();
       const reserved=(event.ctrlKey||event.metaKey)&&['l','r','w','t','n','q'].includes(event.key.toLowerCase());
@@ -181,7 +197,7 @@ class DomHost {
   }
   async paste() {
     if(this.disposed)return;
-    this.input.focus();
+    this.input.focus();this.awaitFreshEdit=false;
     try {this.syncSelection();await this.clipboard.paste(this.app,this.options.clipboard);}
     catch(error){this.report(error);}
     if(!this.disposed)this.render();
@@ -192,7 +208,7 @@ class DomHost {
     this.rendering=true;
     try {
       for(let attempt=0;attempt<8;attempt+=1){
-        this.dirty=false;
+        this.dirty=false;this.reconcileComposition();
         const state=this.snapshot();
         for(const key of this.presses.observe(state.control))this.worldKeys.delete(key);
         this.worldState.textContent=this.worldKeys.size?`World controls: ${[...this.worldKeys].join(', ')}`:'World controls released';
@@ -209,8 +225,13 @@ class DomHost {
         const visible=state.messages.slice(0,Math.max(0,state.messages.length-state.scroll));
         // Preserve the accessibility log when its shared text has not changed.
         const prior=[...this.history.children];
-        if(prior.length!==visible.length||prior.some((node,index)=>node.textContent!==visible[index]))this.history.replaceChildren(...visible.map(text=>element('li',{dir:'auto'},text)));
-        this.history.scrollTop=this.history.scrollHeight;
+        if(prior.length!==visible.length||prior.some((node,index)=>node.textContent!==visible[index])){
+          const atBottom=this.history.scrollHeight-this.history.clientHeight-this.history.scrollTop<2;
+          const scrollTop=this.history.scrollTop;
+          this.history.replaceChildren(...visible.map(text=>element('li',{dir:'auto'},text)));
+          this.history.scrollTop=atBottom||state.scroll!==this.presentedScroll?this.history.scrollHeight:scrollTop;
+        }
+        this.presentedScroll=state.scroll;
         this.older.disabled=state.scroll>=Math.max(0,state.messages.length-1);this.newer.disabled=state.scroll===0;
         if(state.control.modal&&!this.dialog.open)this.dialog.showModal();
         if(!state.control.modal&&this.dialog.open){this.dialog.close();this.input.focus();}
@@ -222,6 +243,7 @@ class DomHost {
         // measured synchronously before acknowledging this exact shared revision.
         this.input.getBoundingClientRect();this.history.getBoundingClientRect();
         const stamp=this.app.prepare(bounds.width,bounds.height,window.devicePixelRatio||1);
+        if(JSON.parse(stamp).revision!==state.revision){this.app.discard_prepared(stamp);continue;}
         try {this.app.ack_presented(stamp);this.stamp=stamp;}catch(error){this.app.discard_prepared(stamp);throw error;}
         return;
       }
