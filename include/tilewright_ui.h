@@ -36,6 +36,7 @@ typedef uint32_t twui_status;
 #define TWUI_REENTRANT UINT32_C(10)
 #define TWUI_POISONED UINT32_C(11)
 #define TWUI_INTERNAL_PANIC UINT32_C(12)
+#define TWUI_RENDER_ERROR UINT32_C(13)
 
 typedef struct twui_config {
     uint32_t struct_size, abi_version;
@@ -140,6 +141,46 @@ twui_status twui_discard_prepared(twui_context *context, const twui_stamp *stamp
 twui_status twui_get_displayed(twui_context *context, twui_stamp *out_stamp);
 twui_status twui_invalidate_surface(twui_context *context);
 twui_status twui_pointer(twui_context *context, const twui_stamp *stamp, float x, float y, uint32_t *consumed);
+
+#ifdef TWUI_CPU_PROTOTYPE
+/* Available only when built with Cargo feature cpu-prototype. This is the CPU
+ * reference renderer, not a GPU performance claim. Fonts come from the host's
+ * explicitly verified manifest; no files/system fonts/network are consulted.
+ * Font array elements must have exactly sizeof(twui_font) as struct_size.
+ * Each font is <=32MiB, the entire pack <=64MiB, count 1..32, family <=128 bytes.
+ * sha256 is the expected digest from that manifest. Install once per context.
+ */
+typedef struct twui_font {
+    uint32_t struct_size, reserved;
+    const uint8_t *family;
+    uint64_t family_bytes;
+    const uint8_t *bytes;
+    uint64_t byte_length;
+    uint8_t sha256[32];
+} twui_font;
+typedef struct twui_image {
+    uint32_t struct_size, width, height, stride;
+    uint64_t byte_length;
+    twui_stamp stamp;
+} twui_image;
+typedef struct twui_rect {
+    uint32_t struct_size, reserved;
+    float x, y, width, height;
+} twui_rect;
+twui_status twui_set_fonts(twui_context *context, const twui_font *fonts, uint32_t count);
+/* Physical size = logical viewport size * scale, integral and <=4096 each,
+ * at most 4 million pixels. Output is tightly packed premultiplied RGBA8. Prepare
+ * retains pixels and exact shaped geometry until discarded or replaced after
+ * acknowledgment. Copy does not acknowledge. Alpha integration is prototype.
+ */
+twui_status twui_render_prepare(twui_context *context, const twui_viewport *viewport, twui_image *out_image);
+twui_status twui_copy_rgba(twui_context *context, const twui_stamp *stamp,
+    uint8_t *buffer, uint64_t capacity, uint64_t *required);
+/* Returns EMPTY if no visible caret; requires exact currently displayed/live
+ * stamp. Rectangle is in logical coordinates; host applies its screen transform.
+ */
+twui_status twui_get_ime_rect(twui_context *context, const twui_stamp *stamp, twui_rect *out_rect);
+#endif
 
 #ifdef __cplusplus
 }

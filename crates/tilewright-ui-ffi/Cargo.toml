@@ -22,3 +22,15 @@ unused_must_use = "deny"
 
 [lints.clippy]
 all = "deny"
+
+[features]
+default = []
+cpu-prototype = ["dep:tilewright-ui-render", "tilewright-ui-render/prototype", "dep:tilewright-render-ui"]
+
+[dependencies.tilewright-ui-render]
+workspace = true
+optional = true
+
+[dependencies.tilewright-render-ui]
+workspace = true
+optional = true

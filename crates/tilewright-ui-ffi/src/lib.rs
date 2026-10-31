@@ -118,11 +118,34 @@ pub struct Viewport {
     pub reserved2: u32,
 }
 
+#[cfg(feature = "cpu-prototype")]
+mod render;
+struct Engine {
+    app: App,
+    #[cfg(feature = "cpu-prototype")]
+    renderer: Option<tilewright_ui_render::UiRenderer>,
+    #[cfg(feature = "cpu-prototype")]
+    frames: Vec<render::Frame>,
+}
+impl Engine {
+    fn new(app: App) -> Self {
+        Self { app, #[cfg(feature = "cpu-prototype")] renderer: None,
+            #[cfg(feature = "cpu-prototype")] frames: Vec::new() }
+    }
+    #[cfg(feature = "cpu-prototype")]
+    fn prune_frames(&mut self) {
+        let displayed = self.app.displayed().map(|frame| frame.stamp);
+        self.frames.retain(|frame| Some(frame.stamp) == displayed || !frame.was_displayed);
+    }
+}
+impl std::ops::Deref for Engine { type Target = App; fn deref(&self) -> &App { &self.app } }
+impl std::ops::DerefMut for Engine { fn deref_mut(&mut self) -> &mut App { &mut self.app } }
+
 pub struct Context {
     owner: ThreadId,
     busy: AtomicBool,
     poisoned: AtomicBool,
-    app: UnsafeCell<App>,
+    app: UnsafeCell<Engine>,
 }
 
 // Each raw pointer operation below follows the documented foreign caller
@@ -177,7 +200,7 @@ unsafe fn input_text(input: &Input, maximum: usize) -> Result<String> {
     std::str::from_utf8(bytes).map(str::to_owned).map_err(|_| INVALID_ARGUMENT)
 }
 
-unsafe fn with_context(context: *mut Context, f: impl FnOnce(&mut App) -> Result<()>) -> u32 {
+unsafe fn with_context(context: *mut Context, f: impl FnOnce(&mut Engine) -> Result<()>) -> u32 {
     if context.is_null() {
         return INVALID_ARGUMENT;
     }
@@ -282,7 +305,7 @@ pub unsafe extern "C" fn twui_create(config: *const Config, output: *mut *mut Co
             history_bytes: config.history_bytes as usize, composer_bytes: config.composer_bytes as usize,
             queued_batches: config.queued_batches as usize, prepared_frames: config.prepared_frames as usize,
         }).map_err(app_error)?;
-        let context = Box::new(Context { owner: thread::current().id(), busy: AtomicBool::new(false), poisoned: AtomicBool::new(false), app: UnsafeCell::new(app) });
+        let context = Box::new(Context { owner: thread::current().id(), busy: AtomicBool::new(false), poisoned: AtomicBool::new(false), app: UnsafeCell::new(Engine::new(app)) });
         // SAFETY: transfers a library allocation's opaque handle to the caller.
         unsafe { output.write(Box::into_raw(context)) };
         Ok(())
@@ -413,18 +436,30 @@ pub unsafe extern "C" fn twui_prepare(context: *mut Context, viewport: *const Vi
         check_size(output)?;
         let viewport = viewport_from_c(read_sized(viewport)?)?;
         let frame = app.prepare(viewport).map_err(app_error)?;
+        #[cfg(feature = "cpu-prototype")] app.frames.retain(|value| value.stamp.surface == frame.stamp.surface);
         output.write(stamp_to_c(frame.stamp)); Ok(())
     }) }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_ack_presented(context: *mut Context, stamp: *const Stamp) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| app.ack_presented(stamp_from_c(read_sized(stamp)?)?).map_err(app_error)) }
+    unsafe { with_context(context, |app| {
+        let stamp = stamp_from_c(read_sized(stamp)?)?;
+        app.ack_presented(stamp).map_err(app_error)?;
+        #[cfg(feature = "cpu-prototype")]
+        { for frame in &mut app.frames { if frame.stamp == stamp { frame.was_displayed = true; } } app.prune_frames(); }
+        Ok(())
+    }) }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_discard_prepared(context: *mut Context, stamp: *const Stamp) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| app.discard_prepared(stamp_from_c(read_sized(stamp)?)?).map_err(app_error)) }
+    unsafe { with_context(context, |app| {
+        let stamp = stamp_from_c(read_sized(stamp)?)?;
+        app.discard_prepared(stamp).map_err(app_error)?;
+        #[cfg(feature = "cpu-prototype")] app.frames.retain(|frame| frame.stamp != stamp);
+        Ok(())
+    }) }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_get_displayed(context: *mut Context, output: *mut Stamp) -> u32 {
@@ -437,7 +472,11 @@ pub unsafe extern "C" fn twui_get_displayed(context: *mut Context, output: *mut 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_invalidate_surface(context: *mut Context) -> u32 {
     // SAFETY: context obeys the public ABI contract.
-    unsafe { with_context(context, |app| app.invalidate_surface().map(|_| ()).map_err(app_error)) }
+    unsafe { with_context(context, |app| {
+        app.invalidate_surface().map_err(app_error)?;
+        #[cfg(feature = "cpu-prototype")] app.frames.clear();
+        Ok(())
+    }) }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_pointer(context: *mut Context, stamp: *const Stamp, x: f32, y: f32, consumed: *mut u32) -> u32 {
@@ -462,7 +501,7 @@ mod tests {
     #[test]
     fn panic_poison_and_reentry_are_fenced() {
         let app = App::new(tilewright_ui::Limits::default()).unwrap();
-        let raw = Box::into_raw(Box::new(Context { owner: thread::current().id(), busy: AtomicBool::new(true), poisoned: AtomicBool::new(false), app: UnsafeCell::new(app) }));
+        let raw = Box::into_raw(Box::new(Context { owner: thread::current().id(), busy: AtomicBool::new(true), poisoned: AtomicBool::new(false), app: UnsafeCell::new(Engine::new(app)) }));
         // SAFETY: these pointers refer to a live locally owned library context.
         unsafe {
             assert_eq!(with_context(raw, |_| Ok(())), REENTRANT);
