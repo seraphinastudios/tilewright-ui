@@ -124,7 +124,8 @@ static bool event(struct host *host, SDL_Event *event) {
         if (event->key.windowID == own && event->key.scancode > SDL_SCANCODE_UNKNOWN && event->key.scancode < SDL_SCANCODE_COUNT) {
             size_t physical = (size_t)event->key.scancode;
             bool down = event->type == SDL_EVENT_KEY_DOWN;
-            if (down && host->pressed[physical] == 0) host->pressed[physical] = key_value(event->key.key, event->key.mod);
+            bool new_press = host->pressed[physical] == 0;
+            if (down && new_press) host->pressed[physical] = key_value(event->key.key, event->key.mod);
             uint32_t value = host->pressed[physical] ? host->pressed[physical] : key_value(event->key.key, event->key.mod);
             twui_status key_status = apply(host, (twui_input){ .kind = down ? TWUI_KEY_DOWN : TWUI_KEY_UP, .value = value, .physical_key = (uint32_t)physical, .key_repeat = down && event->key.repeat });
             bool owned = host->consumed;
@@ -139,7 +140,7 @@ static bool event(struct host *host, SDL_Event *event) {
                 }
                 clipboard(host, &event->key);
             }
-            if (down && !event->key.repeat) {
+            if (down && new_press && key_status == TWUI_OK && !event->key.repeat) {
                 if (event->key.key == SDLK_TAB && !state(host).modal_open)
                     (void)apply(host, (twui_input){ .kind = TWUI_SET_FOCUS, .value = !state(host).focused });
                 if (event->key.key == SDLK_F1)

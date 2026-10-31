@@ -111,6 +111,7 @@ impl HostInput {
                 let Some(code) = physical(*scancode) else {
                     return Ok(true);
                 };
+                let new_press = !self.pressed.contains_key(&code);
                 let key = *self
                     .pressed
                     .entry(code)
@@ -122,7 +123,7 @@ impl HostInput {
                     repeat: *repeat,
                 }))?;
                 self.last_consumed = disposition == tilewright_ui::Disposition::Consumed;
-                if !repeat {
+                if new_press && !repeat {
                     if *keycode == Some(Keycode::Tab) && !app.ui().control().modal_open {
                         app.apply(Input::Focus(if app.ui().text_target().is_some() {
                             None
@@ -180,8 +181,8 @@ impl HostInput {
                             app.apply(Input::Activate(SUBMIT))?;
                         }
                         WORLD => {
-                            self.last_consumed = !app.ui().control().world_input_allowed;
                             app.apply(Input::Focus(None))?;
+                            self.last_consumed = !app.ui().control().world_input_allowed;
                         }
                         _ => (),
                     }
@@ -380,5 +381,70 @@ mod tests {
         assert_eq!(app.ui().snapshot().scroll, 0);
         host.event(&mut app, &wheel(350.0), 1).unwrap();
         assert_eq!(app.ui().snapshot().scroll, 1);
+    }
+    #[test]
+    fn return_and_keypad_enter_have_independent_release_ownership() {
+        use sdl3::keyboard::Scancode;
+        for reverse in [false, true] {
+            let mut app = App::new(Limits::default()).unwrap();
+            app.apply(Input::Focus(Some(COMPOSER))).unwrap();
+            let mut host = HostInput::default();
+            host.synchronize(&app, 0);
+            host.event(
+                &mut app,
+                &key(Keycode::Return, Scancode::Return, Mod::NOMOD, true),
+                1,
+            )
+            .unwrap();
+            host.event(
+                &mut app,
+                &key(Keycode::KpEnter, Scancode::KpEnter, Mod::NOMOD, true),
+                1,
+            )
+            .unwrap();
+            assert!(app.ui().can_apply_key_effect(Scancode::Return as u16));
+            assert!(app.ui().can_apply_key_effect(Scancode::KpEnter as u16));
+            let (first, second) = if reverse {
+                (
+                    (Keycode::KpEnter, Scancode::KpEnter),
+                    (Keycode::Return, Scancode::Return),
+                )
+            } else {
+                (
+                    (Keycode::Return, Scancode::Return),
+                    (Keycode::KpEnter, Scancode::KpEnter),
+                )
+            };
+            host.event(&mut app, &key(first.0, first.1, Mod::NOMOD, false), 1)
+                .unwrap();
+            assert!(!app.ui().can_apply_key_effect(first.1 as u16));
+            assert!(app.ui().can_apply_key_effect(second.1 as u16));
+            host.event(&mut app, &key(second.0, second.1, Mod::NOMOD, false), 1)
+                .unwrap();
+            assert!(!app.ui().can_apply_key_effect(second.1 as u16));
+        }
+    }
+    #[test]
+    fn a_world_arrow_repeated_after_focus_cannot_request_editor_effects() {
+        use sdl3::keyboard::Scancode;
+        let mut app = App::new(Limits::default()).unwrap();
+        let mut host = HostInput::default();
+        host.synchronize(&app, 0);
+        host.event(
+            &mut app,
+            &key(Keycode::Left, Scancode::Left, Mod::NOMOD, true),
+            1,
+        )
+        .unwrap();
+        app.apply(Input::Focus(Some(COMPOSER))).unwrap();
+        host.synchronize(&app, 1);
+        let mut repeated = key(Keycode::Left, Scancode::Left, Mod::NOMOD, true);
+        if let Event::KeyDown { repeat, .. } = &mut repeated {
+            *repeat = true;
+        }
+        host.event(&mut app, &repeated, 1).unwrap();
+        assert!(host.last_consumed);
+        assert!(!app.ui().can_apply_key_effect(Scancode::Left as u16));
+        assert!(host.world_held.is_empty());
     }
 }
