@@ -1,0 +1,19 @@
+[package]
+name = "tilewright-ui-native-demo"
+description = "Caller-owned SDL3 shared UI reference presenter"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+tilewright-ui.workspace = true
+tilewright-app.workspace = true
+tilewright-ui-render = { workspace = true, features = ["prototype"] }
+sdl3 = { version = "=0.20.0", default-features = false, features = ["build-from-source-static"] }
+
+[lints]
+workspace = true
