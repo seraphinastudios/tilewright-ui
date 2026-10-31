@@ -129,17 +129,32 @@ struct Engine {
 }
 impl Engine {
     fn new(app: App) -> Self {
-        Self { app, #[cfg(feature = "cpu-prototype")] renderer: None,
-            #[cfg(feature = "cpu-prototype")] frames: Vec::new() }
+        Self {
+            app,
+            #[cfg(feature = "cpu-prototype")]
+            renderer: None,
+            #[cfg(feature = "cpu-prototype")]
+            frames: Vec::new(),
+        }
     }
     #[cfg(feature = "cpu-prototype")]
     fn prune_frames(&mut self) {
         let displayed = self.app.displayed().map(|frame| frame.stamp);
-        self.frames.retain(|frame| Some(frame.stamp) == displayed || !frame.was_displayed);
+        self.frames
+            .retain(|frame| Some(frame.stamp) == displayed || !frame.was_displayed);
     }
 }
-impl std::ops::Deref for Engine { type Target = App; fn deref(&self) -> &App { &self.app } }
-impl std::ops::DerefMut for Engine { fn deref_mut(&mut self) -> &mut App { &mut self.app } }
+impl std::ops::Deref for Engine {
+    type Target = App;
+    fn deref(&self) -> &App {
+        &self.app
+    }
+}
+impl std::ops::DerefMut for Engine {
+    fn deref_mut(&mut self) -> &mut App {
+        &mut self.app
+    }
+}
 
 pub struct Context {
     owner: ThreadId,
@@ -168,7 +183,12 @@ unsafe fn read_sized<T: Copy>(ptr: *const T) -> Result<T> {
     // SAFETY: checked advertised extent, caller guarantees storage validity.
     Ok(unsafe { ptr.read() })
 }
-unsafe fn copy_bytes(text: &[u8], buffer: *mut u8, capacity: u64, required: *mut u64) -> Result<()> {
+unsafe fn copy_bytes(
+    text: &[u8],
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> Result<()> {
     if required.is_null() || capacity > isize::MAX as u64 || (buffer.is_null() && capacity != 0) {
         return Err(INVALID_ARGUMENT);
     }
@@ -197,7 +217,9 @@ unsafe fn input_text(input: &Input, maximum: usize) -> Result<String> {
     }
     // SAFETY: caller guarantees the readable nonaliasing span for this call.
     let bytes = unsafe { std::slice::from_raw_parts(input.text, len) };
-    std::str::from_utf8(bytes).map(str::to_owned).map_err(|_| INVALID_ARGUMENT)
+    std::str::from_utf8(bytes)
+        .map(str::to_owned)
+        .map_err(|_| INVALID_ARGUMENT)
 }
 
 unsafe fn with_context(context: *mut Context, f: impl FnOnce(&mut Engine) -> Result<()>) -> u32 {
@@ -233,15 +255,23 @@ unsafe fn with_context(context: *mut Context, f: impl FnOnce(&mut Engine) -> Res
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn twui_abi_version() -> u32 { 1 }
+pub extern "C" fn twui_abi_version() -> u32 {
+    1
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_destroy(context: *mut Context) -> u32 {
-    if context.is_null() { return INVALID_ARGUMENT; }
+    if context.is_null() {
+        return INVALID_ARGUMENT;
+    }
     // SAFETY: caller provides a live, uniquely destroyed library handle.
     let value = unsafe { &*context };
-    if value.owner != thread::current().id() { return WRONG_THREAD; }
-    if value.busy.swap(true, Ordering::Acquire) { return REENTRANT; }
+    if value.owner != thread::current().id() {
+        return WRONG_THREAD;
+    }
+    if value.busy.swap(true, Ordering::Acquire) {
+        return REENTRANT;
+    }
     match catch_unwind(AssertUnwindSafe(|| {
         // SAFETY: matches the allocation in create; no references survive.
         drop(unsafe { Box::from_raw(context) });
@@ -253,11 +283,22 @@ pub unsafe extern "C" fn twui_destroy(context: *mut Context) -> u32 {
 
 fn ui_error(error: tilewright_ui::UiError) -> u32 {
     use tilewright_ui::UiError::*;
-    match error { InvalidInput => INVALID_ARGUMENT, LimitExceeded => LIMIT_EXCEEDED, QueueFull => QUEUE_FULL, Stale => STALE, Exhausted => EXHAUSTED }
+    match error {
+        InvalidInput => INVALID_ARGUMENT,
+        LimitExceeded => LIMIT_EXCEEDED,
+        QueueFull => QUEUE_FULL,
+        Stale => STALE,
+        Exhausted => EXHAUSTED,
+    }
 }
 fn app_error(error: tilewright_app::AppError) -> u32 {
     use tilewright_app::AppError::*;
-    match error { Ui(error) => ui_error(error), Stale => STALE, QueueFull => QUEUE_FULL, Exhausted => EXHAUSTED }
+    match error {
+        Ui(error) => ui_error(error),
+        Stale => STALE,
+        QueueFull => QUEUE_FULL,
+        Exhausted => EXHAUSTED,
+    }
 }
 fn disposition(value: tilewright_ui::Disposition) -> u32 {
     u32::from(value == tilewright_ui::Disposition::Consumed)
@@ -265,17 +306,29 @@ fn disposition(value: tilewright_ui::Disposition) -> u32 {
 fn target(input: &Input) -> Result<tilewright_ui::TextTarget> {
     use tilewright_ui::*;
     Ok(TextTarget {
-        widget: WidgetRef { id: COMPOSER, generation: WidgetGeneration::new(input.widget_generation).map_err(ui_error)? },
+        widget: WidgetRef {
+            id: COMPOSER,
+            generation: WidgetGeneration::new(input.widget_generation).map_err(ui_error)?,
+        },
         control_epoch: ControlEpoch::new(input.control_epoch).map_err(ui_error)?,
         revision: TextRevision::new(input.text_revision).map_err(ui_error)?,
     })
 }
 fn stamp_to_c(value: tilewright_app::PresentationStamp) -> Stamp {
-    Stamp { struct_size: size_of::<Stamp>() as u32, reserved: 0, surface: value.surface.get(), frame: value.frame.get(), geometry: value.geometry.get(), ui_revision: value.ui_revision.get() }
+    Stamp {
+        struct_size: size_of::<Stamp>() as u32,
+        reserved: 0,
+        surface: value.surface.get(),
+        frame: value.frame.get(),
+        geometry: value.geometry.get(),
+        ui_revision: value.ui_revision.get(),
+    }
 }
 fn stamp_from_c(value: Stamp) -> Result<tilewright_app::PresentationStamp> {
     use tilewright_app::*;
-    if value.reserved != 0 { return Err(INVALID_ARGUMENT); }
+    if value.reserved != 0 {
+        return Err(INVALID_ARGUMENT);
+    }
     Ok(PresentationStamp {
         surface: SurfaceEpoch::new(value.surface).map_err(app_error)?,
         frame: FrameId::new(value.frame).map_err(app_error)?,
@@ -284,59 +337,132 @@ fn stamp_from_c(value: Stamp) -> Result<tilewright_app::PresentationStamp> {
     })
 }
 fn viewport_from_c(value: Viewport) -> Result<tilewright_app::Viewport> {
-    if value.reserved != 0 || value.reserved2 != 0 { return Err(INVALID_ARGUMENT); }
-    Ok(tilewright_app::Viewport { width: value.width, height: value.height, scale: value.scale })
+    if value.reserved != 0 || value.reserved2 != 0 {
+        return Err(INVALID_ARGUMENT);
+    }
+    Ok(tilewright_app::Viewport {
+        width: value.width,
+        height: value.height,
+        scale: value.scale,
+    })
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_create(config: *const Config, output: *mut *mut Context) -> u32 {
-    if output.is_null() { return INVALID_ARGUMENT; }
+    if output.is_null() {
+        return INVALID_ARGUMENT;
+    }
     // SAFETY: caller supplies writable nonaliasing output storage.
     unsafe { output.write(std::ptr::null_mut()) };
     match catch_unwind(AssertUnwindSafe(|| -> Result<()> {
         // SAFETY: caller supplies valid sized config storage.
         let config = unsafe { read_sized(config)? };
-        if config.abi_version != 1 { return Err(ABI_MISMATCH); }
+        if config.abi_version != 1 {
+            return Err(ABI_MISMATCH);
+        }
         // Explicit allocation/work bounds for this prototype C surface.
-        if [config.message_bytes, config.history_bytes, config.composer_bytes].iter().any(|n| *n > 16 * 1024 * 1024)
-            || config.history_messages > 65536 || config.queued_batches > 65536 || config.prepared_frames > 64 { return Err(LIMIT_EXCEEDED); }
+        if [
+            config.message_bytes,
+            config.history_bytes,
+            config.composer_bytes,
+        ]
+        .iter()
+        .any(|n| *n > 16 * 1024 * 1024)
+            || config.history_messages > 65536
+            || config.queued_batches > 65536
+            || config.prepared_frames > 64
+        {
+            return Err(LIMIT_EXCEEDED);
+        }
         let app = App::new(tilewright_ui::Limits {
-            message_bytes: config.message_bytes as usize, history_messages: config.history_messages as usize,
-            history_bytes: config.history_bytes as usize, composer_bytes: config.composer_bytes as usize,
-            queued_batches: config.queued_batches as usize, prepared_frames: config.prepared_frames as usize,
-        }).map_err(app_error)?;
-        let context = Box::new(Context { owner: thread::current().id(), busy: AtomicBool::new(false), poisoned: AtomicBool::new(false), app: UnsafeCell::new(Engine::new(app)) });
+            message_bytes: config.message_bytes as usize,
+            history_messages: config.history_messages as usize,
+            history_bytes: config.history_bytes as usize,
+            composer_bytes: config.composer_bytes as usize,
+            queued_batches: config.queued_batches as usize,
+            prepared_frames: config.prepared_frames as usize,
+        })
+        .map_err(app_error)?;
+        let context = Box::new(Context {
+            owner: thread::current().id(),
+            busy: AtomicBool::new(false),
+            poisoned: AtomicBool::new(false),
+            app: UnsafeCell::new(Engine::new(app)),
+        });
         // SAFETY: transfers a library allocation's opaque handle to the caller.
         unsafe { output.write(Box::into_raw(context)) };
         Ok(())
     })) {
-        Ok(result) => result.err().unwrap_or(OK), Err(_) => INTERNAL_PANIC,
+        Ok(result) => result.err().unwrap_or(OK),
+        Err(_) => INTERNAL_PANIC,
     }
 }
 
 unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input> {
     use tilewright_ui::{Input as I, *};
-    if input.reserved != 0 || input.reserved2 != 0 { return Err(INVALID_ARGUMENT); }
+    if input.reserved != 0 || input.reserved2 != 0 {
+        return Err(INVALID_ARGUMENT);
+    }
     let text_kind = matches!(input.kind, 1 | 2 | 12);
     let target_kind = matches!(input.kind, 1..=6);
     let offset_kind = matches!(input.kind, 2 | 4);
     let value_kind = matches!(input.kind, 8..=11 | 14 | 15);
     if (!text_kind && (!input.text.is_null() || input.text_len != 0))
-        || (!target_kind && (input.widget_generation != 0 || input.control_epoch != 0 || input.text_revision != 0))
+        || (!target_kind
+            && (input.widget_generation != 0
+                || input.control_epoch != 0
+                || input.text_revision != 0))
         || (!offset_kind && (input.anchor != 0 || input.caret != 0))
-        || (!value_kind && input.value != 0) || (input.kind != 13 && input.delta != 0) { return Err(INVALID_ARGUMENT); }
-    let boolean = || match input.value { 0 => Ok(false), 1 => Ok(true), _ => Err(INVALID_ARGUMENT) };
+        || (!value_kind && input.value != 0)
+        || (input.kind != 13 && input.delta != 0)
+    {
+        return Err(INVALID_ARGUMENT);
+    }
+    let boolean = || match input.value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(INVALID_ARGUMENT),
+    };
     let text = || {
-        let limit = if input.kind == 12 { app.ui().limits().message_bytes } else { app.ui().limits().composer_bytes };
+        let limit = if input.kind == 12 {
+            app.ui().limits().message_bytes
+        } else {
+            app.ui().limits().composer_bytes
+        };
         // SAFETY: forwarded caller span obligations; bounded before reading.
         unsafe { input_text(&input, limit) }
     };
     Ok(match input.kind {
-        1 => I::TextCommit { target: target(&input)?, text: text()? },
-        2 => I::Preedit { target: target(&input)?, text: text()?, start: i32::try_from(input.anchor).map_err(|_| INVALID_ARGUMENT)?, length: i32::try_from(input.caret).map_err(|_| INVALID_ARGUMENT)? },
-        3 => I::CancelComposition { target: target(&input)? },
-        4 => I::Selection { target: target(&input)?, selection: TextSelection { anchor: TextCursor::new(usize::try_from(input.anchor).map_err(|_| INVALID_ARGUMENT)?), focus: TextCursor::new(usize::try_from(input.caret).map_err(|_| INVALID_ARGUMENT)?) } },
-        5 | 6 => I::Edit { target: target(&input)?, command: if input.kind == 5 { TextCommand::Backspace } else { TextCommand::Delete } },
+        1 => I::TextCommit {
+            target: target(&input)?,
+            text: text()?,
+        },
+        2 => I::Preedit {
+            target: target(&input)?,
+            text: text()?,
+            start: i32::try_from(input.anchor).map_err(|_| INVALID_ARGUMENT)?,
+            length: i32::try_from(input.caret).map_err(|_| INVALID_ARGUMENT)?,
+        },
+        3 => I::CancelComposition {
+            target: target(&input)?,
+        },
+        4 => I::Selection {
+            target: target(&input)?,
+            selection: TextSelection {
+                anchor: TextCursor::new(
+                    usize::try_from(input.anchor).map_err(|_| INVALID_ARGUMENT)?,
+                ),
+                focus: TextCursor::new(usize::try_from(input.caret).map_err(|_| INVALID_ARGUMENT)?),
+            },
+        },
+        5 | 6 => I::Edit {
+            target: target(&input)?,
+            command: if input.kind == 5 {
+                TextCommand::Backspace
+            } else {
+                TextCommand::Delete
+            },
+        },
         7 => I::Activate(SUBMIT),
         8 => I::Focus(boolean()?.then_some(COMPOSER)),
         9 => I::Modal(boolean()?),
@@ -344,154 +470,284 @@ unsafe fn convert_input(input: Input, app: &App) -> Result<tilewright_ui::Input>
         11 => I::WindowFocused(boolean()?),
         12 => I::ReceiveMessage(text()?),
         13 => I::Scroll(input.delta),
-        14 | 15 => I::Key(KeyEvent { key: match input.value { 1 => Key::Enter, 2 => Key::Backspace, 3 => Key::Delete, 4 => Key::SelectAll, 5 => Key::Escape, 6 => Key::Other(1), _ => return Err(INVALID_ARGUMENT) }, pressed: input.kind == 14, repeat: false }),
+        14 | 15 => I::Key(KeyEvent {
+            key: match input.value {
+                1 => Key::Enter,
+                2 => Key::Backspace,
+                3 => Key::Delete,
+                4 => Key::SelectAll,
+                5 => Key::Escape,
+                6 => Key::Other(1),
+                _ => return Err(INVALID_ARGUMENT),
+            },
+            pressed: input.kind == 14,
+            repeat: false,
+        }),
         _ => return Err(INVALID_ARGUMENT),
     })
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn twui_apply(context: *mut Context, input: *const Input, consumed: *mut u32) -> u32 {
+pub unsafe extern "C" fn twui_apply(
+    context: *mut Context,
+    input: *const Input,
+    consumed: *mut u32,
+) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        if consumed.is_null() { return Err(INVALID_ARGUMENT); }
-        let input = convert_input(read_sized(input)?, app)?;
-        let result = app.apply(input).map_err(app_error)?;
-        consumed.write(disposition(result));
-        Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            if consumed.is_null() {
+                return Err(INVALID_ARGUMENT);
+            }
+            let input = convert_input(read_sized(input)?, app)?;
+            let result = app.apply(input).map_err(app_error)?;
+            consumed.write(disposition(result));
+            Ok(())
+        })
+    }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_get_state(context: *mut Context, output: *mut State) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        check_size(output)?;
-        let snapshot = app.ui().snapshot();
-        output.write(State {
-            struct_size: size_of::<State>() as u32, focused: u32::from(snapshot.control.focused_widget.is_some()),
-            modal_open: u32::from(snapshot.control.modal_open), suspended: u32::from(snapshot.control.suspended),
-            ui_revision: snapshot.revision.get(), text_revision: snapshot.composer.revision.get(),
-            anchor: snapshot.composer.selection.anchor.byte as u64, caret: snapshot.composer.selection.focus.byte as u64,
-            history_messages: snapshot.messages.len() as u32, scroll: snapshot.scroll as u32,
-            composer_bytes: snapshot.composer.committed.len() as u64,
-            preedit_bytes: snapshot.composer.composition.as_ref().map_or(0, |value| value.text.len()) as u64,
-            widget_generation: snapshot.composer_widget.generation.get(), control_epoch: snapshot.control.epoch.get(),
-        });
-        Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            check_size(output)?;
+            let snapshot = app.ui().snapshot();
+            output.write(State {
+                struct_size: size_of::<State>() as u32,
+                focused: u32::from(snapshot.control.focused_widget.is_some()),
+                modal_open: u32::from(snapshot.control.modal_open),
+                suspended: u32::from(snapshot.control.suspended),
+                ui_revision: snapshot.revision.get(),
+                text_revision: snapshot.composer.revision.get(),
+                anchor: snapshot.composer.selection.anchor.byte as u64,
+                caret: snapshot.composer.selection.focus.byte as u64,
+                history_messages: snapshot.messages.len() as u32,
+                scroll: snapshot.scroll as u32,
+                composer_bytes: snapshot.composer.committed.len() as u64,
+                preedit_bytes: snapshot
+                    .composer
+                    .composition
+                    .as_ref()
+                    .map_or(0, |value| value.text.len()) as u64,
+                widget_generation: snapshot.composer_widget.generation.get(),
+                control_epoch: snapshot.control.epoch.get(),
+            });
+            Ok(())
+        })
+    }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_get_control(context: *mut Context, output: *mut Control) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        check_size(output)?;
-        let value = app.ui().control();
-        output.write(Control { struct_size: size_of::<Control>() as u32, world_input_allowed: u32::from(value.world_input_allowed), modal_open: u32::from(value.modal_open), suspended: u32::from(value.suspended), epoch: value.epoch.get(), widget_id: value.focused_widget.map_or(0, |v| v.id.get()), widget_generation: value.focused_widget.map_or(0, |v| v.generation.get()) });
-        Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            check_size(output)?;
+            let value = app.ui().control();
+            output.write(Control {
+                struct_size: size_of::<Control>() as u32,
+                world_input_allowed: u32::from(value.world_input_allowed),
+                modal_open: u32::from(value.modal_open),
+                suspended: u32::from(value.suspended),
+                epoch: value.epoch.get(),
+                widget_id: value.focused_widget.map_or(0, |v| v.id.get()),
+                widget_generation: value.focused_widget.map_or(0, |v| v.generation.get()),
+            });
+            Ok(())
+        })
+    }
 }
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn twui_copy_text(context: *mut Context, source: u32, index: u32, buffer: *mut u8, capacity: u64, required: *mut u64) -> u32 {
+pub unsafe extern "C" fn twui_copy_text(
+    context: *mut Context,
+    source: u32,
+    index: u32,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        let snapshot = app.ui().snapshot();
-        let text = match source {
-            1 if index == 0 => snapshot.composer.committed.as_str(),
-            2 if index == 0 => snapshot.composer.composition.as_ref().map_or("", |v| v.text.as_str()),
-            3 => snapshot.messages.get(index as usize).ok_or(INVALID_ARGUMENT)?.as_str(),
-            _ => return Err(INVALID_ARGUMENT),
-        };
-        copy_bytes(text.as_bytes(), buffer, capacity, required)
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            let snapshot = app.ui().snapshot();
+            let text = match source {
+                1 if index == 0 => snapshot.composer.committed.as_str(),
+                2 if index == 0 => snapshot
+                    .composer
+                    .composition
+                    .as_ref()
+                    .map_or("", |v| v.text.as_str()),
+                3 => snapshot
+                    .messages
+                    .get(index as usize)
+                    .ok_or(INVALID_ARGUMENT)?
+                    .as_str(),
+                _ => return Err(INVALID_ARGUMENT),
+            };
+            copy_bytes(text.as_bytes(), buffer, capacity, required)
+        })
+    }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_peek_action(context: *mut Context, output: *mut Action) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        check_size(output)?;
-        let batch = app.ui().peek_actions().ok_or(EMPTY)?;
-        let tilewright_ui::Action::SubmitChat { text } = &batch.actions[0];
-        output.write(Action { struct_size: size_of::<Action>() as u32, kind: 1, batch_id: batch.id.get(), text_bytes: text.len() as u64 });
-        Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            check_size(output)?;
+            let batch = app.ui().peek_actions().ok_or(EMPTY)?;
+            let tilewright_ui::Action::SubmitChat { text } = &batch.actions[0];
+            output.write(Action {
+                struct_size: size_of::<Action>() as u32,
+                kind: 1,
+                batch_id: batch.id.get(),
+                text_bytes: text.len() as u64,
+            });
+            Ok(())
+        })
+    }
 }
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn twui_copy_action(context: *mut Context, batch_id: u64, buffer: *mut u8, capacity: u64, required: *mut u64) -> u32 {
+pub unsafe extern "C" fn twui_copy_action(
+    context: *mut Context,
+    batch_id: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        let batch = app.ui().peek_actions().ok_or(EMPTY)?;
-        if batch.id.get() != batch_id { return Err(STALE); }
-        let tilewright_ui::Action::SubmitChat { text } = &batch.actions[0];
-        copy_bytes(text.as_bytes(), buffer, capacity, required)
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            let batch = app.ui().peek_actions().ok_or(EMPTY)?;
+            if batch.id.get() != batch_id {
+                return Err(STALE);
+            }
+            let tilewright_ui::Action::SubmitChat { text } = &batch.actions[0];
+            copy_bytes(text.as_bytes(), buffer, capacity, required)
+        })
+    }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_ack_action(context: *mut Context, batch_id: u64) -> u32 {
     // SAFETY: context obeys the public ABI contract.
-    unsafe { with_context(context, |app| app.ui_mut().ack_actions(tilewright_ui::BatchId::new(batch_id).map_err(ui_error)?).map_err(ui_error)) }
+    unsafe {
+        with_context(context, |app| {
+            app.ui_mut()
+                .ack_actions(tilewright_ui::BatchId::new(batch_id).map_err(ui_error)?)
+                .map_err(ui_error)
+        })
+    }
 }
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn twui_prepare(context: *mut Context, viewport: *const Viewport, output: *mut Stamp) -> u32 {
+pub unsafe extern "C" fn twui_prepare(
+    context: *mut Context,
+    viewport: *const Viewport,
+    output: *mut Stamp,
+) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        check_size(output)?;
-        let viewport = viewport_from_c(read_sized(viewport)?)?;
-        let frame = app.prepare(viewport).map_err(app_error)?;
-        #[cfg(feature = "cpu-prototype")] app.frames.retain(|value| value.stamp.surface == frame.stamp.surface);
-        output.write(stamp_to_c(frame.stamp)); Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            check_size(output)?;
+            let viewport = viewport_from_c(read_sized(viewport)?)?;
+            let frame = app.prepare(viewport).map_err(app_error)?;
+            #[cfg(feature = "cpu-prototype")]
+            app.frames
+                .retain(|value| value.stamp.surface == frame.stamp.surface);
+            output.write(stamp_to_c(frame.stamp));
+            Ok(())
+        })
+    }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_ack_presented(context: *mut Context, stamp: *const Stamp) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        let stamp = stamp_from_c(read_sized(stamp)?)?;
-        app.ack_presented(stamp).map_err(app_error)?;
-        #[cfg(feature = "cpu-prototype")]
-        { for frame in &mut app.frames { if frame.stamp == stamp { frame.was_displayed = true; } } app.prune_frames(); }
-        Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            let stamp = stamp_from_c(read_sized(stamp)?)?;
+            app.ack_presented(stamp).map_err(app_error)?;
+            #[cfg(feature = "cpu-prototype")]
+            {
+                for frame in &mut app.frames {
+                    if frame.stamp == stamp {
+                        frame.was_displayed = true;
+                    }
+                }
+                app.prune_frames();
+            }
+            Ok(())
+        })
+    }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_discard_prepared(context: *mut Context, stamp: *const Stamp) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        let stamp = stamp_from_c(read_sized(stamp)?)?;
-        app.discard_prepared(stamp).map_err(app_error)?;
-        #[cfg(feature = "cpu-prototype")] app.frames.retain(|frame| frame.stamp != stamp);
-        Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            let stamp = stamp_from_c(read_sized(stamp)?)?;
+            app.discard_prepared(stamp).map_err(app_error)?;
+            #[cfg(feature = "cpu-prototype")]
+            app.frames.retain(|frame| frame.stamp != stamp);
+            Ok(())
+        })
+    }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_get_displayed(context: *mut Context, output: *mut Stamp) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        check_size(output)?;
-        output.write(stamp_to_c(app.displayed().ok_or(EMPTY)?.stamp)); Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            check_size(output)?;
+            output.write(stamp_to_c(app.displayed().ok_or(EMPTY)?.stamp));
+            Ok(())
+        })
+    }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn twui_invalidate_surface(context: *mut Context) -> u32 {
     // SAFETY: context obeys the public ABI contract.
-    unsafe { with_context(context, |app| {
-        app.invalidate_surface().map_err(app_error)?;
-        #[cfg(feature = "cpu-prototype")] app.frames.clear();
-        Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            app.invalidate_surface().map_err(app_error)?;
+            #[cfg(feature = "cpu-prototype")]
+            app.frames.clear();
+            Ok(())
+        })
+    }
 }
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn twui_pointer(context: *mut Context, stamp: *const Stamp, x: f32, y: f32, consumed: *mut u32) -> u32 {
+pub unsafe extern "C" fn twui_pointer(
+    context: *mut Context,
+    stamp: *const Stamp,
+    x: f32,
+    y: f32,
+    consumed: *mut u32,
+) -> u32 {
     // SAFETY: all foreign pointers obey the public ABI contract.
-    unsafe { with_context(context, |app| {
-        if consumed.is_null() || !x.is_finite() || !y.is_finite() { return Err(INVALID_ARGUMENT); }
-        let hit = app.hit_test(stamp_from_c(read_sized(stamp)?)?, x, y).map_err(app_error)?;
-        let value = match hit.map(|v| v.id) {
-            Some(tilewright_ui::COMPOSER) => disposition(app.apply(tilewright_ui::Input::Focus(Some(tilewright_ui::COMPOSER))).map_err(app_error)?),
-            Some(tilewright_ui::SUBMIT) => disposition(app.apply(tilewright_ui::Input::Activate(tilewright_ui::SUBMIT)).map_err(app_error)?),
-            Some(tilewright_ui::WORLD) | None => u32::from(!app.ui().control().world_input_allowed),
-            _ => 1,
-        };
-        consumed.write(value); Ok(())
-    }) }
+    unsafe {
+        with_context(context, |app| {
+            if consumed.is_null() || !x.is_finite() || !y.is_finite() {
+                return Err(INVALID_ARGUMENT);
+            }
+            let hit = app
+                .hit_test(stamp_from_c(read_sized(stamp)?)?, x, y)
+                .map_err(app_error)?;
+            let value = match hit.map(|v| v.id) {
+                Some(tilewright_ui::COMPOSER) => disposition(
+                    app.apply(tilewright_ui::Input::Focus(Some(tilewright_ui::COMPOSER)))
+                        .map_err(app_error)?,
+                ),
+                Some(tilewright_ui::SUBMIT) => disposition(
+                    app.apply(tilewright_ui::Input::Activate(tilewright_ui::SUBMIT))
+                        .map_err(app_error)?,
+                ),
+                Some(tilewright_ui::WORLD) | None => {
+                    u32::from(!app.ui().control().world_input_allowed)
+                }
+                _ => 1,
+            };
+            consumed.write(value);
+            Ok(())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -501,12 +757,20 @@ mod tests {
     #[test]
     fn panic_poison_and_reentry_are_fenced() {
         let app = App::new(tilewright_ui::Limits::default()).unwrap();
-        let raw = Box::into_raw(Box::new(Context { owner: thread::current().id(), busy: AtomicBool::new(true), poisoned: AtomicBool::new(false), app: UnsafeCell::new(Engine::new(app)) }));
+        let raw = Box::into_raw(Box::new(Context {
+            owner: thread::current().id(),
+            busy: AtomicBool::new(true),
+            poisoned: AtomicBool::new(false),
+            app: UnsafeCell::new(Engine::new(app)),
+        }));
         // SAFETY: these pointers refer to a live locally owned library context.
         unsafe {
             assert_eq!(with_context(raw, |_| Ok(())), REENTRANT);
             (*raw).busy.store(false, Ordering::Release);
-            assert_eq!(with_context(raw, |_| panic!("injected internal failure")), INTERNAL_PANIC);
+            assert_eq!(
+                with_context(raw, |_| panic!("injected internal failure")),
+                INTERNAL_PANIC
+            );
             assert_eq!(with_context(raw, |_| Ok(())), POISONED);
             assert_eq!(twui_destroy(raw), OK);
         }
