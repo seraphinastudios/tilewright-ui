@@ -65,13 +65,13 @@ static twui_input text_input(struct host *host, uint32_t kind, const char *text)
     if (kind == TWUI_RECEIVE) { result.widget_generation = 0; result.control_epoch = 0; result.text_revision = 0; }
     return result;
 }
-static uint32_t key_value(SDL_Keycode key, SDL_Keymod modifiers, SDL_Scancode physical) {
+static uint32_t key_value(SDL_Keycode key, SDL_Keymod modifiers) {
     if (key == SDLK_RETURN || key == SDLK_KP_ENTER) return TWUI_KEY_ENTER;
     if (key == SDLK_BACKSPACE) return TWUI_KEY_BACKSPACE;
     if (key == SDLK_DELETE) return TWUI_KEY_DELETE;
     if (key == SDLK_ESCAPE) return TWUI_KEY_ESCAPE;
     if (key == SDLK_A && (modifiers & SDL_KMOD_CTRL)) return TWUI_KEY_SELECT_ALL;
-    return UINT32_C(0x10000) + (uint32_t)physical;
+    return TWUI_KEY_OTHER;
 }
 static void clipboard(struct host *host, const SDL_KeyboardEvent *event) {
     twui_state current = state(host);
@@ -102,12 +102,12 @@ static bool event(struct host *host, SDL_Event *event) {
     case SDL_EVENT_WINDOW_FOCUS_GAINED: (void)apply(host, (twui_input){ .kind = TWUI_SET_WINDOW_FOCUS, .value = 1 }); break;
     case SDL_EVENT_WINDOW_MINIMIZED:
         (void)apply(host, (twui_input){ .kind = TWUI_SET_SUSPENDED, .value = 1 });
-        check(twui_invalidate_surface(host->ui), "invalidate minimized"); break;
+        check(twui_invalidate_surface(host->ui), "invalidate minimized"); sync_control(host); break;
     case SDL_EVENT_WINDOW_RESTORED:
         (void)apply(host, (twui_input){ .kind = TWUI_SET_SUSPENDED, .value = 0 });
-        check(twui_invalidate_surface(host->ui), "invalidate restored"); break;
+        check(twui_invalidate_surface(host->ui), "invalidate restored"); sync_control(host); break;
     case SDL_EVENT_WINDOW_RESIZED: case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-        check(twui_invalidate_surface(host->ui), "invalidate resize"); break;
+        check(twui_invalidate_surface(host->ui), "invalidate resize"); sync_control(host); break;
     case SDL_EVENT_TEXT_INPUT:
         if (event->text.windowID == own && host->text_active && event->text.timestamp >= host->session_start)
             (void)apply(host, text_input(host, TWUI_COMMIT, event->text.text));
@@ -124,19 +124,21 @@ static bool event(struct host *host, SDL_Event *event) {
         if (event->key.windowID == own && event->key.scancode > SDL_SCANCODE_UNKNOWN && event->key.scancode < SDL_SCANCODE_COUNT) {
             size_t physical = (size_t)event->key.scancode;
             bool down = event->type == SDL_EVENT_KEY_DOWN;
-            if (down && host->pressed[physical] == 0) host->pressed[physical] = key_value(event->key.key, event->key.mod, event->key.scancode);
-            uint32_t value = host->pressed[physical] ? host->pressed[physical] : key_value(event->key.key, event->key.mod, event->key.scancode);
-            if (down && state(host).focused) {
+            if (down && host->pressed[physical] == 0) host->pressed[physical] = key_value(event->key.key, event->key.mod);
+            uint32_t value = host->pressed[physical] ? host->pressed[physical] : key_value(event->key.key, event->key.mod);
+            twui_status key_status = apply(host, (twui_input){ .kind = down ? TWUI_KEY_DOWN : TWUI_KEY_UP, .value = value, .physical_key = (uint32_t)physical, .key_repeat = down && event->key.repeat });
+            bool owned = host->consumed;
+            uint32_t effect_allowed = 0;
+            if (down && key_status == TWUI_OK) check(twui_key_effect_allowed(host->ui, (uint32_t)physical, &effect_allowed), "key effect permission");
+            if (effect_allowed) {
                 uint32_t motion = event->key.key == SDLK_LEFT ? 1U : event->key.key == SDLK_RIGHT ? 2U : event->key.key == SDLK_HOME ? 3U : event->key.key == SDLK_END ? 4U : 0U;
                 twui_stamp stamp = { .struct_size = sizeof(stamp) };
                 if (motion && twui_get_displayed(host->ui, &stamp) == TWUI_OK) {
-                    twui_status moved = twui_move_visual(host->ui, &stamp, motion, (event->key.mod & SDL_KMOD_SHIFT) ? 1U : 0U);
+                    twui_status moved = twui_move_visual(host->ui, &stamp, (uint32_t)physical, motion, (event->key.mod & SDL_KMOD_SHIFT) ? 1U : 0U);
                     if (moved != TWUI_OK && moved != TWUI_STALE) fprintf(stderr, "cursor rejected: %" PRIu32 "\n", moved);
                 }
+                clipboard(host, &event->key);
             }
-            if (down) clipboard(host, &event->key);
-            (void)apply(host, (twui_input){ .kind = down ? TWUI_KEY_DOWN : TWUI_KEY_UP, .value = value, .key_repeat = down && event->key.repeat });
-            bool owned = host->consumed;
             if (down && !event->key.repeat) {
                 if (event->key.key == SDLK_TAB && !state(host).modal_open)
                     (void)apply(host, (twui_input){ .kind = TWUI_SET_FOCUS, .value = !state(host).focused });
@@ -295,6 +297,7 @@ int main(int argc, char **argv) {
         twui_viewport viewport = { .struct_size = sizeof(viewport), .width = (float)width, .height = (float)height, .scale = 1 };
         twui_image image = { .struct_size = sizeof(image) };
         check(twui_render_prepare(host.ui, &viewport, &image), "render prepare");
+        sync_control(&host); /* prepare can implicitly invalidate the viewport */
         uint8_t *pixels = malloc((size_t)image.byte_length); if (!pixels) return EXIT_FAILURE;
         uint64_t required = 0; check(twui_copy_rgba(host.ui, &image.stamp, pixels, image.byte_length, &required), "copy RGBA");
         /* Premultiplied shared pixels over independently authored host map. */

@@ -72,10 +72,6 @@ fn main() -> Result<()> {
     while running {
         synchronize_text(&mut input, &app, &text_input, canvas.window())?;
         for event in events.poll_iter() {
-            if let Err(error) = clipboard_event(&mut app, &event, window_id, &clipboard) {
-                eprintln!("clipboard rejected: {error}");
-            }
-            geometry_event(&mut app, &event, window_id, displayed_render.as_ref());
             let mut rejected = false;
             match input.event(&mut app, &event, window_id) {
                 Ok(keep) => running &= keep,
@@ -85,6 +81,12 @@ fn main() -> Result<()> {
                 }
             }
             synchronize_text(&mut input, &app, &text_input, canvas.window())?;
+            if !rejected {
+                if let Err(error) = clipboard_event(&mut app, &event, window_id, &clipboard) {
+                    eprintln!("clipboard rejected: {error}");
+                }
+                geometry_event(&mut app, &event, window_id, displayed_render.as_ref());
+            }
             if let Some(trace) = &mut trace {
                 trace.event(
                     &trace::event_name(&event),
@@ -192,12 +194,16 @@ fn clipboard_event(
         keycode: Some(key),
         keymod,
         repeat: false,
+        scancode,
         ..
     } = event
     else {
         return Ok(());
     };
     if *id != window_id || !keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD) {
+        return Ok(());
+    }
+    if !input::physical(*scancode).is_some_and(|code| app.ui().can_apply_key_effect(code)) {
         return Ok(());
     }
     let Some(target) = app.ui().text_target() else {
@@ -241,8 +247,13 @@ fn geometry_event(app: &mut App, event: &Event, window_id: u32, compiled: Option
             window_id: id,
             keycode: Some(key),
             keymod,
+            scancode,
             ..
-        } if *id == window_id && snapshot.composition.is_none() => {
+        } if *id == window_id
+            && snapshot.composition.is_none()
+            && input::physical(*scancode)
+                .is_some_and(|code| app.ui().can_apply_key_effect(code)) =>
+        {
             let motion = match key {
                 Keycode::Left => VisualMotion::Left,
                 Keycode::Right => VisualMotion::Right,

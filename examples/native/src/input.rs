@@ -108,13 +108,16 @@ impl HostInput {
             } if *id == window_id => {
                 // Tab and F1 are explicit host focus/modal commands. Send the
                 // physical key first so its release remains UI-owned/quarantined.
-                let code = scancode.map_or(0, |code| code as u16);
+                let Some(code) = physical(*scancode) else {
+                    return Ok(true);
+                };
                 let key = *self
                     .pressed
                     .entry(code)
-                    .or_insert_with(|| semantic_key(*keycode, *keymod, code));
+                    .or_insert_with(|| semantic_key(*keycode, *keymod));
                 let disposition = app.apply(Input::Key(KeyEvent {
                     key,
+                    physical: code,
                     pressed: true,
                     repeat: *repeat,
                 }))?;
@@ -144,12 +147,15 @@ impl HostInput {
                 keymod,
                 ..
             } if *id == window_id => {
-                let code = scancode.map_or(0, |code| code as u16);
+                let Some(code) = physical(*scancode) else {
+                    return Ok(true);
+                };
                 let disposition = app.apply(Input::Key(KeyEvent {
+                    physical: code,
                     key: self
                         .pressed
                         .remove(&code)
-                        .unwrap_or_else(|| semantic_key(*keycode, *keymod, code)),
+                        .unwrap_or_else(|| semantic_key(*keycode, *keymod)),
                     pressed: false,
                     repeat: false,
                 }))?;
@@ -200,14 +206,19 @@ impl HostInput {
         Ok(true)
     }
 }
-fn semantic_key(key: Option<Keycode>, modifiers: Mod, physical: u16) -> Key {
+pub fn physical(scancode: Option<sdl3::keyboard::Scancode>) -> Option<u16> {
+    scancode
+        .filter(|code| *code != sdl3::keyboard::Scancode::Unknown)
+        .map(|code| code as u16)
+}
+fn semantic_key(key: Option<Keycode>, modifiers: Mod) -> Key {
     match key {
         Some(Keycode::Return | Keycode::KpEnter) => Key::Enter,
         Some(Keycode::Backspace) => Key::Backspace,
         Some(Keycode::Delete) => Key::Delete,
         Some(Keycode::Escape) => Key::Escape,
         Some(Keycode::A) if modifiers.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD) => Key::SelectAll,
-        _ => Key::Other(physical),
+        _ => Key::Other,
     }
 }
 
