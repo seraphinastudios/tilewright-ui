@@ -1,0 +1,16 @@
+[package]
+name = "tilewright-app"
+description = "Host-neutral application coordination for Tilewright UI"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+tilewright-ui.workspace = true
+
+[lints]
+workspace = true

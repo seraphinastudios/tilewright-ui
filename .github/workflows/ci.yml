@@ -1,0 +1,35 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    name: Source checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust and Ubuntu SDL build dependencies
+        run: bash tools/install-ci-dependencies.sh
+      - name: Prepare exact licensed font pack outside source
+        run: |
+          font_root="${RUNNER_TEMP}/tilewright-ui-fonts"
+          python3 tools/prepare-fonts.py "$font_root" --acquire
+          printf 'TILEWRIGHT_UI_FONT_ROOT=%s\n' "$font_root" >> "$GITHUB_ENV"
+      - name: Check source, tests and strict Clippy
+        run: bash tools/check.sh
+      - name: C17 ABI link and lifecycle tests
+        run: bash tools/check-c.sh cpu-prototype
+      - name: C17 SDL sample and dummy-driver input regressions
+        run: bash tools/check-c-host.sh
+      - name: Browser adapter compile
+        run: cargo check --locked --package tilewright-ui-web --target wasm32-unknown-unknown

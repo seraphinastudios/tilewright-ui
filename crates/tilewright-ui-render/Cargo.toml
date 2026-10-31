@@ -1,0 +1,26 @@
+[package]
+name = "tilewright-ui-render"
+description = "Tilewright renderer adapter for shared UI widgets"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+tilewright-ui.workspace = true
+tilewright-scene.workspace = true
+tilewright-render-ui.workspace = true
+tilewright-render-api.workspace = true
+tilewright-render-resources.workspace = true
+tilewright-render-testkit = { workspace = true, optional = true }
+
+[features]
+# Bounded CPU reference presentation for the unpublished native/C prototypes.
+# Production consumers submit `Presentation::scene` to their renderer instead.
+prototype = ["dep:tilewright-render-testkit"]
+
+[lints]
+workspace = true

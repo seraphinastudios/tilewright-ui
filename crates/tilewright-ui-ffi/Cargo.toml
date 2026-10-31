@@ -1,0 +1,32 @@
+[package]
+name = "tilewright-ui-ffi"
+description = "Auditable C ABI for Tilewright shared UI"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+tilewright-ui.workspace = true
+tilewright-app.workspace = true
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = "deny"
+
+[features]
+default = []
+cpu-prototype = ["dep:tilewright-ui-render", "tilewright-ui-render/prototype"]
+
+[dependencies.tilewright-ui-render]
+workspace = true
+optional = true
