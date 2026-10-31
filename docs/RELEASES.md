@@ -3,7 +3,8 @@
 The current workspace is an unpublished prototype. Every package has
 `publish = false`; declaring version `0.1.0` does not reserve a registry name or
 authorize an upload. Renderer `0.6.0` and its immutable source release remain an
-independent, unchanged delivery.
+independent, unchanged delivery. This workspace targets the separately prepared
+`0.6.1` successor; its production registry lock remains pending that release.
 
 ## Proposed first package family
 
@@ -11,7 +12,7 @@ independent, unchanged delivery.
 | --- | --- | --- |
 | `tilewright-ui` | Unicode segmentation | Unpublished headless core |
 | `tilewright-app` | `tilewright-ui` | Unpublished host coordination |
-| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.6.0` APIs | Unpublished renderer adapter |
+| `tilewright-ui-render` | `tilewright-ui`, renderer `0.6.1` APIs (release pending) | Unpublished renderer adapter |
 | `tilewright-ui-ffi` | `tilewright-ui`, `tilewright-app`; optional UI renderer | Unpublished C facade |
 
 The native demo and browser host packages remain unpublished. Avoid creating
@@ -26,7 +27,7 @@ again at that point; a previous registry 404 is not a reservation.
 
 ## Required evidence before publication
 
-1. Resolve and commit the real registry dependency graph after renderer `0.6.0`
+1. Resolve and commit the real registry dependency graph after renderer `0.6.1`
    is published. A task-local renderer patch or generated candidate lock is not
    registry-consumer evidence.
 2. Reconcile implemented APIs with the documented contracts; retain independent
