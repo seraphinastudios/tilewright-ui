@@ -2,7 +2,7 @@
 
 `UiRenderer::compile(&prepared.snapshot, &prepared.layout, physical_size)`
 translates the exact neutral `tilewright-ui::Layout` retained by the app.
-It targets `tilewright-render-ui =0.6.1` for Unicode shaping, selection geometry,
+It targets `tilewright-render-ui =0.6.2` for Unicode shaping, selection geometry,
 glyph rasterization and immutable resources. It does not create widget bounds.
 
 Construct `UiRenderer` with a verified `FontPack`, text/paint budgets and a
