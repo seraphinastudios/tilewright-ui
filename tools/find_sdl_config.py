@@ -11,7 +11,12 @@ def select(report, target):
     outputs = set()
     for line in report.splitlines():
         item = json.loads(line)
-        if item.get("reason") == "build-script-executed" and "#sdl3-sys@" in item.get("package_id", ""):
+        # Cargo can report a host build-script instance without SDL linkage as
+        # well as the target instance. Only the latter owns the C host prefix.
+        if (item.get("reason") == "build-script-executed"
+                and item.get("package_id", "").startswith(
+                    "registry+https://github.com/rust-lang/crates.io-index#sdl3-sys@")
+                and "static=SDL3" in item.get("linked_libs", [])):
             outputs.add(Path(item["out_dir"]).resolve(strict=True))
     if len(outputs) != 1:
         raise ValueError("expected exactly one SDL3 build-script output from the current Cargo build")

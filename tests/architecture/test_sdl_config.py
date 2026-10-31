@@ -25,12 +25,31 @@ class SdlConfigTests(unittest.TestCase):
         config.mkdir(parents=True)
         (config / "SDL3Config.cmake").write_text("# fixture")
         (config / "SDL3ConfigVersion.cmake").write_text(f'set(PACKAGE_VERSION "{version}")\n')
-        return json.dumps({"reason": "build-script-executed", "package_id": "registry+https://github.com/rust-lang/crates.io-index#sdl3-sys@0.6.6", "out_dir": str(out)}), config
+        return json.dumps({"reason": "build-script-executed", "package_id": "registry+https://github.com/rust-lang/crates.io-index#sdl3-sys@0.7.2+SDL-3.4.18", "linked_libs": ["static=SDL3", "m"], "out_dir": str(out)}), config
 
     def test_only_current_report_selects_prefix(self):
         self.report("stale")
         report, config = self.report()
         self.assertEqual(SELECTOR.select(report, self.target), config)
+
+    def test_registry_host_and_target_build_script_reports(self):
+        # Identity/link fields from Cargo 1.97.1's real registry build report;
+        # only output paths are replaced with this test's isolated directories.
+        host, _ = self.report("host")
+        host = json.loads(host)
+        host["linked_libs"] = []
+        target, config = self.report("target")
+        self.assertEqual(SELECTOR.select(json.dumps(host) + "\n" + target,
+                                         self.target), config)
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            SELECTOR.select(json.dumps(host), self.target)
+
+    def test_foreign_package_identity_is_rejected(self):
+        report, _ = self.report()
+        report = json.loads(report)
+        report["package_id"] = "path+file:///foreign#sdl3-sys@0.7.2+SDL-3.4.18"
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            SELECTOR.select(json.dumps(report), self.target)
 
     def test_missing_or_ambiguous_current_outputs_fail(self):
         first, _ = self.report("first")
