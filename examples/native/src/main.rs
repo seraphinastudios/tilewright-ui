@@ -234,7 +234,7 @@ fn main() -> Result<()> {
                 let Action::SubmitChat { text } = action;
                 app.apply(Input::ReceiveMessage(text))?;
             }
-            app.ui_mut().ack_actions(batch.id)?;
+            app.ack_actions(batch.id)?;
         }
         if !running {
             break;
