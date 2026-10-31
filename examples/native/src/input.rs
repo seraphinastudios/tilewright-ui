@@ -30,6 +30,9 @@ impl HostInput {
         self.text_active = app.ui().text_target().is_some();
         changed
     }
+    // Keep the SDL event mapping visible in one exhaustive dispatch. Wheel
+    // deltas deliberately truncate fractional ticks and saturate at i32 bounds.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
     pub fn event(
         &mut self,
         app: &mut App,
@@ -156,20 +159,20 @@ impl HostInput {
                 y,
                 ..
             } if *id == window_id => {
-                if let Some(stamp) = app.displayed().map(|frame| frame.stamp) {
-                    if let Ok(Some(widget)) = app.hit_test(stamp, *x, *y) {
-                        match widget.id {
-                            COMPOSER => {
-                                app.apply(Input::Focus(Some(COMPOSER)))?;
-                            }
-                            SUBMIT => {
-                                app.apply(Input::Activate(SUBMIT))?;
-                            }
-                            WORLD => {
-                                app.apply(Input::Focus(None))?;
-                            }
-                            _ => (),
+                if let Some(stamp) = app.displayed().map(|frame| frame.stamp)
+                    && let Ok(Some(widget)) = app.hit_test(stamp, *x, *y)
+                {
+                    match widget.id {
+                        COMPOSER => {
+                            app.apply(Input::Focus(Some(COMPOSER)))?;
                         }
+                        SUBMIT => {
+                            app.apply(Input::Activate(SUBMIT))?;
+                        }
+                        WORLD => {
+                            app.apply(Input::Focus(None))?;
+                        }
+                        _ => (),
                     }
                 }
             }
