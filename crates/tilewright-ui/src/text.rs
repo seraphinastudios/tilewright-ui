@@ -134,6 +134,20 @@ impl TextInput {
         })
     }
 
+    /// Replace a host binding while retaining the monotonically increasing
+    /// text identity. No focused editing operation uses this reset path.
+    pub(crate) fn bind(&mut self, text: String) -> Result<(), UiError> {
+        if text.len() > self.max_bytes || text.chars().any(char::is_control) {
+            return Err(UiError::LimitExceeded);
+        }
+        let revision = self.next_revision()?;
+        self.selection = TextSelection::caret(TextCursor::new(text.len()));
+        self.text = text;
+        self.composition = None;
+        self.revision = revision;
+        Ok(())
+    }
+
     pub fn text(&self) -> &str {
         &self.text
     }
