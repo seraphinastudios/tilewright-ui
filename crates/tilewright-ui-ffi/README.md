@@ -61,10 +61,8 @@ unchanged. `twui_set_layout` supplies explicit logical bounds, clip and viewport
 `twui_prepare_current` and `twui_render_prepare_current` retain that exact
 attachment. Changed attachments retire displayed geometry immediately.
 
-Before `twui_bind_field`, explicitly clear focus and retire the native editing
-session; binding a focused slot returns `STALE` without mutation. Binding then
-atomically loads another field, advances its identity and retires composition
-and physical ownership. Queued actions remain immutable.
+`twui_bind_field` atomically loads another field, advances its identity and retires
+old focus, composition and physical ownership. Queued actions remain immutable.
 Use `twui_get_field_action` to retrieve the source generation and text revision;
 the host keeps the mapping to its own document/object identity. Acknowledgment
 accepts a batch for host processing and does not authorize a domain mutation.

@@ -151,10 +151,8 @@ twui_status twui_create_with_composition(const twui_config *config, uint32_t com
  * invalidates displayed geometry immediately, before the next prepare/present.
  * Invalid size/reserved fields/geometry leave the previous attachment intact. */
 twui_status twui_set_layout(twui_context *context, const twui_layout *layout);
-/* Single-field only; requires no focused widget (otherwise STALE). Explicitly
- * SET_FOCUS to zero first to retire the native editing session and old preedit.
- * Copies UTF-8 (empty is valid), replaces the draft atomically and advances
- * generation/revision while retiring preedit and physical ownership.
+/* Single-field only. Copies UTF-8 (empty is valid), replaces the draft atomically,
+ * advances generation/revision and retires focus/preedit/physical ownership.
  * Already queued actions retain their original identity and bytes. Obtain fresh
  * input targets from get_state; never relabel a delayed event with fresh values.
  * out_widget must have initialized struct_size; failures do not write it. */
