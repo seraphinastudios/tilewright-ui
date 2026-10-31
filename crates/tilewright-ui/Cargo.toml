@@ -1,0 +1,16 @@
+[package]
+name = "tilewright-ui"
+description = "Headless shared widget and text interaction for Tilewright"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+unicode-segmentation.workspace = true
+
+[lints]
+workspace = true
