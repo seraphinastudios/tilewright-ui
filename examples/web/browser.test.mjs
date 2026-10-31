@@ -29,8 +29,8 @@ test('real Chromium executes shared WASM state and renderer backends', {timeout:
     const errors=[]; page.on('pageerror',error=>errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     const result = await page.evaluate(async () => {
-      const {default:init,BrowserUi,WorldView} = await import('./pkg/tilewright_ui_web.js'); await init();
-      const app = new BrowserUi(); app.focus(true);
+      const {createUi,createWorld} = await import('./load.mjs');
+      const app = await createUi(); app.focus(true);
       const state=()=>JSON.parse(app.snapshot());
       const replace=text=>{const s=state();app.replace(text,text.length,text.length,s.generation,s.control.epoch,s.textRevision);};
       const rejects=fn=>{try{fn();return false;}catch{return true;}};
@@ -38,6 +38,7 @@ test('real Chromium executes shared WASM state and renderer backends', {timeout:
       const before=state();
       const invalidSurrogateOffset=rejects(()=>app.replace('😀',1,1,before.generation,before.control.epoch,before.textRevision));
       const atomicInvalid=app.snapshot()===JSON.stringify(before);
+      const malformedString=rejects(()=>app.receive("\ud800"));
       app.preedit('漢字',before.generation,before.control.epoch,before.textRevision);
       app.submit(); const composingDoesNotSubmit=app.peek_actions()==='null';
       replace('完成 👩🏽‍💻'); app.submit();
@@ -55,9 +56,9 @@ test('real Chromium executes shared WASM state and renderer backends', {timeout:
       const backends=[];
       for(const backend of ['webgl2','webgpu']) {
         const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;document.body.append(canvas);
-        const world=await WorldView.create(canvas,640,360,backend);world.render(640,360);backends.push(world.backend());world.free();canvas.remove();
+        const world=await createWorld(canvas,640,360,backend);world.render(640,360);backends.push(world.backend());world.free();canvas.remove();
       }
-      app.free(); return {invalidSurrogateOffset,atomicInvalid,composingDoesNotSubmit,stablePeek,acknowledged,staleRejected,uncommitted,retired,backpressure,cancellation,backends};
+      app.free(); return {invalidSurrogateOffset,atomicInvalid,malformedString,composingDoesNotSubmit,stablePeek,acknowledged,staleRejected,uncommitted,retired,backpressure,cancellation,backends};
     });
     for (const [name,value] of Object.entries(result)) if(name!=='backends') assert.equal(value,true,name);
     assert.equal(result.backends.length,2); assert.deepEqual(errors,[]);

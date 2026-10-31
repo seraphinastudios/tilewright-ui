@@ -11,9 +11,8 @@ these modules supply the presentation-independent boundary.
 private account is used. Serve the directory over localhost to import the module.
 
 ```js
-import init, { BrowserUi, WorldView } from './pkg/tilewright_ui_web.js';
-await init();
-const app = new BrowserUi();
+import { createUi, createWorld } from './load.mjs';
+const app = await createUi();
 app.focus(true);
 const state = JSON.parse(app.snapshot());
 app.replace('Hello 👩🏽‍💻', 13, 13,
@@ -21,8 +20,8 @@ app.replace('Hello 👩🏽‍💻', 13, 13,
 // Always re-read the snapshot after a successful mutation.
 ```
 
-Call `exactText` from `boundary.mjs` before passing any browser string to wasm;
-this rejects unmatched UTF-16 surrogates that wasm-bindgen would otherwise
+Use the `load.mjs` facade for browser calls: it applies `exactText` before
+passing browser strings to wasm and rejects unmatched UTF-16 surrogates that wasm-bindgen would otherwise
 silently replace. Selection offsets accepted by `replace` and `select` use DOM
 UTF-16 units. Rust converts to exact UTF-8 offsets; the shared model validates
 complete grapheme boundaries. IDs/revisions are decimal strings checked as u64,
@@ -54,7 +53,7 @@ time and applies completion only against its originating widget/revision.
 Cancellation, rejection, denied permission and malformed clipboard strings do
 not edit the current draft.
 
-`WorldView.create(canvas,width,height,'auto')` renders the existing Tilewright
+`createWorld(canvas,width,height,'auto')` renders the existing Tilewright
 renderer testkit's neutral procedural world through released WGPU APIs. Explicit
 `webgpu` or `webgl2` choices never fall back. There is no Canvas 2D world fallback.
 Call `render` to present and `free` only after no call can reuse the object.
