@@ -142,6 +142,8 @@ twui_status twui_ack_presented(twui_context *context, const twui_stamp *stamp);
 twui_status twui_discard_prepared(twui_context *context, const twui_stamp *stamp);
 twui_status twui_get_displayed(twui_context *context, twui_stamp *out_stamp);
 twui_status twui_invalidate_surface(twui_context *context);
+/* Only an explicit current WORLD hit can be unhandled; panel gaps and
+ * points outside the viewport are consumed. */
 twui_status twui_pointer(twui_context *context, const twui_stamp *stamp, float x, float y, uint32_t *consumed);
 
 #ifdef TWUI_CPU_PROTOTYPE

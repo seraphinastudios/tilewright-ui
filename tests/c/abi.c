@@ -84,6 +84,19 @@ int main(void) {
     thrd_t other;
     assert(thrd_create(&other, wrong_thread, ctx) == thrd_success);
     assert(thrd_join(other, NULL) == thrd_success);
+    /* Only an explicit world hit may escape UI routing. Opaque panel gaps and
+       points outside the surface must never click the world behind the UI. */
+    twui_viewport routing_vp = {0}; routing_vp.struct_size = sizeof routing_vp;
+    routing_vp.width = 800; routing_vp.height = 600; routing_vp.scale = 1;
+    twui_stamp routing_stamp = {0}; routing_stamp.struct_size = sizeof routing_stamp;
+    uint32_t routing_consumed = 99;
+    assert(twui_prepare(ctx, &routing_vp, &routing_stamp) == TWUI_OK);
+    assert(twui_ack_presented(ctx, &routing_stamp) == TWUI_OK);
+    assert(twui_pointer(ctx, &routing_stamp, 10, 10, &routing_consumed) == TWUI_OK && routing_consumed == 0);
+    assert(twui_pointer(ctx, &routing_stamp, 10, 350, &routing_consumed) == TWUI_OK && routing_consumed == 1);
+    assert(twui_pointer(ctx, &routing_stamp, -1, -1, &routing_consumed) == TWUI_OK && routing_consumed == 1);
+    assert(twui_invalidate_surface(ctx) == TWUI_OK);
+
     toggle(ctx, TWUI_SET_FOCUS, 1);
     commit(ctx, "e\xcc\x81 \xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x92\xbb");
     expect_text(ctx, "e\xcc\x81 \xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x92\xbb");

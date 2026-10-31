@@ -754,7 +754,7 @@ pub unsafe extern "C" fn twui_pointer(
                     app.apply(tilewright_ui::Input::Activate(tilewright_ui::SUBMIT))
                         .map_err(app_error)?,
                 ),
-                Some(tilewright_ui::WORLD) | None => {
+                Some(tilewright_ui::WORLD) => {
                     u32::from(!app.ui().control().world_input_allowed)
                 }
                 _ => 1,
