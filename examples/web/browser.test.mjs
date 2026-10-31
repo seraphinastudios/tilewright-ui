@@ -20,10 +20,11 @@ const server = createServer(async (request,response) => {
   } catch { response.writeHead(404).end(); }
 });
 
-test('real Chromium executes shared WASM state and renderer backends', async () => {
+test('real Chromium executes shared WASM state and renderer backends', {timeout:120000}, async () => {
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
-  const browser = await chromium.launch({headless:true,args:['--no-sandbox','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-vulkan=swiftshader','--use-angle=swiftshader','--use-webgpu-adapter=swiftshader']});
+  let browser;
   try {
+  browser = await chromium.launch({headless:true,args:['--no-sandbox','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-vulkan=swiftshader','--use-angle=swiftshader','--use-webgpu-adapter=swiftshader']});
     const page = await browser.newPage();
     const errors=[]; page.on('pageerror',error=>errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
@@ -61,5 +62,5 @@ test('real Chromium executes shared WASM state and renderer backends', async () 
     for (const [name,value] of Object.entries(result)) if(name!=='backends') assert.equal(value,true,name);
     assert.equal(result.backends.length,2); assert.deepEqual(errors,[]);
     console.log(JSON.stringify({browser:await browser.version(),...result}));
-  } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }
+  } finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); }
 });

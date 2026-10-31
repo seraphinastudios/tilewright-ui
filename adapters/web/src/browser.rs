@@ -25,6 +25,13 @@ fn number(value: &str) -> Result<u64> {
     }
     value.parse().map_err(error)
 }
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn offset(value: f64) -> Result<usize> {
+    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > f64::from(u32::MAX) {
+        return Err("InvalidInput".into());
+    }
+    Ok(value as usize)
+}
 fn target(generation: &str, epoch: &str, revision: &str) -> Result<TextTarget> {
     Ok(TextTarget {
         widget: WidgetRef {
@@ -127,15 +134,19 @@ impl BrowserUi {
     pub fn replace(
         &mut self,
         text: &str,
-        anchor: usize,
-        focus: usize,
+        anchor: f64,
+        focus: f64,
         generation: &str,
         epoch: &str,
         revision: &str,
     ) -> Result<()> {
         let selection = TextSelection {
-            anchor: TextCursor::new(utf16_to_utf8(text, anchor).map_err(|_| "InvalidInput")?),
-            focus: TextCursor::new(utf16_to_utf8(text, focus).map_err(|_| "InvalidInput")?),
+            anchor: TextCursor::new(
+                utf16_to_utf8(text, offset(anchor)?).map_err(|_| "InvalidInput")?,
+            ),
+            focus: TextCursor::new(
+                utf16_to_utf8(text, offset(focus)?).map_err(|_| "InvalidInput")?,
+            ),
         };
         self.app
             .apply(Input::ReplaceText {
@@ -183,8 +194,8 @@ impl BrowserUi {
     pub fn select(
         &mut self,
         presentation: &str,
-        anchor: usize,
-        focus: usize,
+        anchor: f64,
+        focus: f64,
         generation: &str,
         epoch: &str,
         revision: &str,
@@ -192,10 +203,12 @@ impl BrowserUi {
         let state = self.app.ui().snapshot();
         let selection = TextSelection {
             anchor: TextCursor::new(
-                utf16_to_utf8(&state.composer.committed, anchor).map_err(|_| "InvalidInput")?,
+                utf16_to_utf8(&state.composer.committed, offset(anchor)?)
+                    .map_err(|_| "InvalidInput")?,
             ),
             focus: TextCursor::new(
-                utf16_to_utf8(&state.composer.committed, focus).map_err(|_| "InvalidInput")?,
+                utf16_to_utf8(&state.composer.committed, offset(focus)?)
+                    .map_err(|_| "InvalidInput")?,
             ),
         };
         self.app
@@ -260,8 +273,8 @@ mod tests {
         let state = state(ui);
         ui.replace(
             text,
-            text.encode_utf16().count(),
-            text.encode_utf16().count(),
+            f64::from(u32::try_from(text.encode_utf16().count()).unwrap()),
+            f64::from(u32::try_from(text.encode_utf16().count()).unwrap()),
             state["generation"].as_str().unwrap(),
             state["control"]["epoch"].as_str().unwrap(),
             state["textRevision"].as_str().unwrap(),
@@ -300,8 +313,8 @@ mod tests {
         assert!(
             ui.select(
                 &frame,
-                0,
-                0,
+                0.,
+                0.,
                 old["generation"].as_str().unwrap(),
                 old["control"]["epoch"].as_str().unwrap(),
                 old["textRevision"].as_str().unwrap()
@@ -313,8 +326,8 @@ mod tests {
         assert!(
             ui.replace(
                 "bad",
-                3,
-                3,
+                3.,
+                3.,
                 old["generation"].as_str().unwrap(),
                 old["control"]["epoch"].as_str().unwrap(),
                 old["textRevision"].as_str().unwrap()

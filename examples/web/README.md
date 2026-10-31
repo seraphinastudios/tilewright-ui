@@ -59,7 +59,7 @@ renderer testkit's neutral procedural world through released WGPU APIs. Explicit
 `webgpu` or `webgl2` choices never fall back. There is no Canvas 2D world fallback.
 Call `render` to present and `free` only after no call can reuse the object.
 
-Unit checks: `node --test examples/web/*.test.mjs` (Node 24 or 26). Rust bridge
+Unit checks: `node --test examples/web/boundary.test.mjs examples/web/clipboard.test.mjs` (Node 24 or 26). Rust bridge
 checks run with `cargo test -p tilewright-ui-web`. Browser, OS IME, clipboard
 permissions and assistive technology acceptance require actual host evidence;
 unit tests do not qualify them.
