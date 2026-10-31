@@ -16,7 +16,28 @@ fn commit(ui: &mut Ui, text: &str) {
     .unwrap();
 }
 fn key(ui: &mut Ui, key: Key, pressed: bool) -> Result<Disposition, UiError> {
+    physical_key(
+        ui,
+        key,
+        match key {
+            Key::Enter => 1,
+            Key::Backspace => 2,
+            Key::Delete => 3,
+            Key::SelectAll => 4,
+            Key::Escape => 5,
+            Key::Other => 6,
+        },
+        pressed,
+    )
+}
+fn physical_key(
+    ui: &mut Ui,
+    key: Key,
+    physical: u16,
+    pressed: bool,
+) -> Result<Disposition, UiError> {
     ui.apply(Input::Key(KeyEvent {
+        physical,
         key,
         pressed,
         repeat: false,
@@ -56,7 +77,7 @@ fn cancellation_survives_full_queue_and_roundtrip_modal() {
     ui.apply(Input::Activate(SUBMIT)).unwrap();
     ui.apply(Input::Focus(None)).unwrap();
     assert_eq!(
-        key(&mut ui, Key::Other(12), true).unwrap(),
+        key(&mut ui, Key::Other, true).unwrap(),
         Disposition::Unhandled
     );
     let before = ui.control().epoch;
@@ -65,7 +86,7 @@ fn cancellation_survives_full_queue_and_roundtrip_modal() {
     assert!(ui.control().epoch > before);
     assert!(ui.control().world_input_allowed);
     assert_eq!(
-        key(&mut ui, Key::Other(12), false).unwrap(),
+        key(&mut ui, Key::Other, false).unwrap(),
         Disposition::Consumed
     );
     assert!(ui.peek_actions().is_some());
@@ -78,6 +99,7 @@ fn cancelled_world_press_cannot_repeat_into_focused_widget() {
     key(&mut ui, Key::Backspace, true).unwrap();
     ui.apply(Input::Focus(Some(COMPOSER))).unwrap();
     ui.apply(Input::Key(KeyEvent {
+        physical: 2,
         key: Key::Backspace,
         pressed: true,
         repeat: true,
@@ -249,7 +271,7 @@ fn repeated_down_keeps_cancelled_press_ownership_until_release() {
         if !started_in_widget {
             ui.apply(Input::Focus(None)).unwrap();
         }
-        let key_code = Key::Other(25);
+        let key_code = Key::Other;
         let expected = if started_in_widget {
             Disposition::Consumed
         } else {
@@ -265,6 +287,7 @@ fn repeated_down_keeps_cancelled_press_ownership_until_release() {
         assert!(ui.control().world_input_allowed);
         assert_eq!(
             ui.apply(Input::Key(KeyEvent {
+                physical: 6,
                 key: key_code,
                 pressed: true,
                 repeat: true
@@ -339,6 +362,7 @@ fn rejected_submit_still_owns_repeats_and_release_after_focus_loss() {
     ui.apply(Input::Focus(None)).unwrap();
     assert_eq!(
         ui.apply(Input::Key(KeyEvent {
+            physical: 1,
             key: Key::Enter,
             pressed: true,
             repeat: true
@@ -363,36 +387,124 @@ fn more_than_256_presses_and_domain_endpoints_keep_ownership_after_blur() {
     commit(&mut ui, "first");
     ui.apply(Input::Activate(SUBMIT)).unwrap();
     commit(&mut ui, "second");
-    for code in 0..257 {
+    for physical in 10..267 {
         assert_eq!(
-            key(&mut ui, Key::Other(code), true).unwrap(),
+            physical_key(&mut ui, Key::Other, physical, true).unwrap(),
             Disposition::Consumed
         );
     }
     assert_eq!(
-        key(&mut ui, Key::Other(u16::MAX), true).unwrap(),
+        physical_key(&mut ui, Key::Other, u16::MAX, true).unwrap(),
         Disposition::Consumed
     );
     let before = ui.snapshot();
     assert_eq!(key(&mut ui, Key::Enter, true), Err(UiError::QueueFull));
     assert_eq!(ui.snapshot(), before);
     ui.apply(Input::Focus(None)).unwrap();
-    for held in [
-        Key::Other(0),
-        Key::Other(256),
-        Key::Other(u16::MAX),
-        Key::Enter,
-    ] {
+    for physical in [10, 266, u16::MAX, 1] {
         assert_eq!(
             ui.apply(Input::Key(KeyEvent {
-                key: held,
+                physical,
+                key: Key::Other,
                 pressed: true,
                 repeat: true
             }))
             .unwrap(),
             Disposition::Consumed
         );
-        assert_eq!(key(&mut ui, held, false).unwrap(), Disposition::Consumed);
-        assert_eq!(key(&mut ui, held, true).unwrap(), Disposition::Unhandled);
+        assert_eq!(
+            physical_key(&mut ui, Key::Other, physical, false).unwrap(),
+            Disposition::Consumed
+        );
+        assert_eq!(
+            physical_key(&mut ui, Key::Other, physical, true).unwrap(),
+            Disposition::Unhandled
+        );
     }
+}
+
+#[test]
+fn simultaneous_return_and_keypad_enter_keep_distinct_ownership_and_fences() {
+    let mut ui = ui();
+    ui.apply(Input::Preedit {
+        target: ui.text_target().unwrap(),
+        text: "候補".into(),
+        start: 0,
+        length: 2,
+    })
+    .unwrap();
+    physical_key(&mut ui, Key::Enter, 13, true).unwrap();
+    physical_key(&mut ui, Key::Enter, 88, true).unwrap();
+    commit(&mut ui, "confirmed");
+    physical_key(&mut ui, Key::Enter, 13, false).unwrap();
+    ui.apply(Input::Activate(SUBMIT)).unwrap();
+    assert!(ui.peek_actions().is_none());
+    ui.apply(Input::Focus(None)).unwrap();
+    assert_eq!(
+        ui.apply(Input::Key(KeyEvent {
+            physical: 88,
+            key: Key::Enter,
+            pressed: true,
+            repeat: true
+        }))
+        .unwrap(),
+        Disposition::Consumed
+    );
+    assert!(!ui.can_apply_key_effect(88));
+    assert_eq!(
+        physical_key(&mut ui, Key::Enter, 88, false).unwrap(),
+        Disposition::Consumed
+    );
+    ui.apply(Input::Activate(SUBMIT)).unwrap();
+    assert!(ui.peek_actions().is_some());
+}
+
+#[test]
+fn host_key_effects_require_current_owned_unquarantined_press() {
+    let mut ui = ui();
+    assert!(!ui.can_apply_key_effect(224));
+    physical_key(&mut ui, Key::Other, 224, true).unwrap(); // Control.
+    physical_key(&mut ui, Key::Other, 57, true).unwrap(); // Caps Lock.
+    assert!(ui.can_apply_key_effect(224));
+    assert!(ui.can_apply_key_effect(57));
+    physical_key(&mut ui, Key::Other, 224, false).unwrap();
+    assert!(!ui.can_apply_key_effect(224));
+    assert!(ui.can_apply_key_effect(57));
+    ui.apply(Input::Focus(None)).unwrap();
+    ui.apply(Input::Focus(Some(COMPOSER))).unwrap();
+    assert!(!ui.can_apply_key_effect(57));
+    assert_eq!(
+        ui.apply(Input::Key(KeyEvent {
+            physical: 57,
+            key: Key::Other,
+            pressed: true,
+            repeat: true
+        }))
+        .unwrap(),
+        Disposition::Consumed
+    );
+    assert!(!ui.can_apply_key_effect(57));
+    physical_key(&mut ui, Key::Other, 225, true).unwrap();
+    assert!(ui.can_apply_key_effect(225));
+    ui.apply(Input::Preedit {
+        target: ui.text_target().unwrap(),
+        text: "x".into(),
+        start: 0,
+        length: 1,
+    })
+    .unwrap();
+    assert!(!ui.can_apply_key_effect(225));
+}
+
+#[test]
+fn rejected_key_action_cannot_authorize_host_effects() {
+    let mut ui = ui();
+    commit(&mut ui, "full");
+    ui.apply(Input::Activate(SUBMIT)).unwrap();
+    commit(&mut ui, "next");
+    assert_eq!(
+        physical_key(&mut ui, Key::Enter, 13, true),
+        Err(UiError::QueueFull)
+    );
+    assert!(!ui.can_apply_key_effect(13));
 }

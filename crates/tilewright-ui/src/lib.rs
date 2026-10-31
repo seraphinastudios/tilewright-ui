@@ -110,10 +110,13 @@ pub enum Key {
     Delete,
     SelectAll,
     Escape,
-    Other(u16),
+    Other,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct KeyEvent {
+    /// Stable host physical identity, independent of the semantic command.
+    /// Hosts must distinguish keys such as Return and keypad Enter.
+    pub physical: u16,
     pub key: Key,
     pub pressed: bool,
     pub repeat: bool,
@@ -189,7 +192,6 @@ pub struct Ui {
     control: ControlSnapshot,
     window_focused: bool,
     keys: KeyLedger,
-    enter_fenced: bool,
 }
 impl Ui {
     pub fn new(limits: Limits) -> Result<Self, UiError> {
@@ -227,7 +229,6 @@ impl Ui {
             },
             window_focused: true,
             keys: KeyLedger::new(),
-            enter_fenced: false,
         })
     }
     pub fn limits(&self) -> Limits {
@@ -248,6 +249,17 @@ impl Ui {
             control_epoch: self.control.epoch,
             revision: self.composer.revision(),
         })
+    }
+    /// After a successful key application, allow host visual/clipboard effects
+    /// only for the active owned press. Consumed alone also includes quarantine.
+    pub fn can_apply_key_effect(&self, physical: u16) -> bool {
+        self.keys.state(physical) == Some((true, false))
+            && self.text_target().is_some()
+            && self.composer_visible
+            && self.window_focused
+            && !self.control.modal_open
+            && !self.control.suspended
+            && !self.composer.is_composing()
     }
     pub fn control(&self) -> ControlSnapshot {
         self.control
@@ -281,7 +293,11 @@ impl Ui {
     /// Physical press ownership is a separate safety ledger: a rejected key
     /// action still owns its eventual repeat/release, preventing world leakage.
     pub fn apply(&mut self, input: Input) -> Result<Disposition, UiError> {
-        let is_key = matches!(input, Input::Key(_));
+        let key_physical = if let Input::Key(event) = &input {
+            Some(event.physical)
+        } else {
+            None
+        };
         let mut next = self.clone();
         match next.apply_inner(input) {
             Ok(result) => {
@@ -289,9 +305,9 @@ impl Ui {
                 Ok(result)
             }
             Err(error) => {
-                if is_key {
+                if let Some(physical) = key_physical {
                     self.keys = next.keys;
-                    self.enter_fenced = next.enter_fenced;
+                    self.keys.quarantine(physical);
                 }
                 Err(error)
             }
@@ -321,7 +337,7 @@ impl Ui {
         {
             return Err(UiError::Stale);
         }
-        if self.composer.is_composing() || self.enter_fenced {
+        if self.composer.is_composing() || self.keys.enter_fenced() {
             return Ok(());
         }
         if self.composer.text().is_empty() {
@@ -422,18 +438,15 @@ impl Ui {
                 if !event.pressed {
                     let owned = self
                         .keys
-                        .release(event.key)
+                        .release(event.physical)
                         .unwrap_or(!self.control.world_input_allowed);
-                    if event.key == Key::Enter {
-                        self.enter_fenced = false;
-                    }
                     return Ok(if owned {
                         Disposition::Consumed
                     } else {
                         Disposition::Unhandled
                     });
                 }
-                let owned = if let Some((owned, quarantined)) = self.keys.state(event.key) {
+                let owned = if let Some((owned, quarantined)) = self.keys.state(event.physical) {
                     if quarantined || !event.repeat {
                         return Ok(if owned {
                             Disposition::Consumed
@@ -445,7 +458,7 @@ impl Ui {
                     owned
                 } else {
                     let owned = !self.control.world_input_allowed;
-                    self.keys.press(event.key, owned);
+                    self.keys.press(event.physical, owned);
                     owned
                 };
                 if !owned {
@@ -464,7 +477,7 @@ impl Ui {
                     match event.key {
                         Key::Enter => {
                             if self.composer.is_composing() {
-                                self.enter_fenced = true;
+                                self.keys.fence_enter(event.physical);
                             } else if !event.repeat {
                                 self.submit()?;
                             }
