@@ -640,9 +640,8 @@ pub unsafe extern "C" fn twui_ack_action(context: *mut Context, batch_id: u64) -
     // SAFETY: context obeys the public ABI contract.
     unsafe {
         with_context(context, |app| {
-            app.ui_mut()
-                .ack_actions(tilewright_ui::BatchId::new(batch_id).map_err(ui_error)?)
-                .map_err(ui_error)
+            app.ack_actions(tilewright_ui::BatchId::new(batch_id).map_err(ui_error)?)
+                .map_err(app_error)
         })
     }
 }
