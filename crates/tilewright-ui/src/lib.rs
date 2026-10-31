@@ -274,12 +274,25 @@ impl Ui {
         self.acknowledged = id.get();
         Ok(())
     }
-    /// Transactions commit all observable state only after validation succeeds.
+    /// Ordinary widget state, revisions, and output commit only after validation.
+    /// Physical press ownership is a separate safety ledger: a rejected key
+    /// action still owns its eventual repeat/release, preventing world leakage.
     pub fn apply(&mut self, input: Input) -> Result<Disposition, UiError> {
+        let is_key = matches!(input, Input::Key(_));
         let mut next = self.clone();
-        let result = next.apply_inner(input)?;
-        *self = next;
-        Ok(result)
+        match next.apply_inner(input) {
+            Ok(result) => {
+                *self = next;
+                Ok(result)
+            }
+            Err(error) => {
+                if is_key {
+                    self.keys = next.keys;
+                    self.enter_fenced = next.enter_fenced;
+                }
+                Err(error)
+            }
+        }
     }
     fn barrier(&mut self) -> Result<(), UiError> {
         self.control.epoch = self.control.epoch.next()?;
@@ -301,6 +314,13 @@ impl Ui {
         }
     }
     fn submit(&mut self) -> Result<(), UiError> {
+        if !self.composer_visible
+            || self.control.suspended
+            || !self.window_focused
+            || self.control.modal_open
+        {
+            return Err(UiError::Stale);
+        }
         if self.composer.is_composing() || self.enter_fenced {
             return Ok(());
         }
@@ -338,7 +358,7 @@ impl Ui {
                 if focus.is_some_and(|id| id != COMPOSER && id != SUBMIT && id != MODAL) {
                     return Err(UiError::InvalidInput);
                 }
-                if focus == Some(COMPOSER)
+                if focus.is_some_and(|id| id == COMPOSER || id == SUBMIT)
                     && (!self.composer_visible
                         || self.control.suspended
                         || !self.window_focused

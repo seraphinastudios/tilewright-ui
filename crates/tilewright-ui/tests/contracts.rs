@@ -282,3 +282,77 @@ fn repeated_down_keeps_cancelled_press_ownership_until_release() {
         );
     }
 }
+
+#[test]
+fn unavailable_composer_and_button_cannot_focus_or_submit_through_keys() {
+    for transition in [
+        Input::Modal(true),
+        Input::Suspend(true),
+        Input::WindowFocused(false),
+        Input::ComposerVisible(false),
+    ] {
+        let mut ui = ui();
+        commit(&mut ui, "retained");
+        ui.apply(Input::Focus(Some(SUBMIT))).unwrap();
+        ui.apply(transition).unwrap();
+        let before = ui.snapshot();
+        for widget in [COMPOSER, SUBMIT] {
+            assert_eq!(
+                ui.apply(Input::Focus(Some(widget))),
+                Err(UiError::InvalidInput)
+            );
+            assert_eq!(ui.snapshot(), before);
+        }
+        assert!(ui.apply(Input::Activate(SUBMIT)).is_err());
+        let _ = key(&mut ui, Key::Enter, true).unwrap();
+        assert!(ui.peek_actions().is_none());
+        assert_eq!(ui.snapshot().composer.committed, "retained");
+    }
+}
+
+#[test]
+fn enabled_focused_button_submits_once_on_enter() {
+    let mut ui = ui();
+    commit(&mut ui, "hello");
+    ui.apply(Input::Focus(Some(SUBMIT))).unwrap();
+    assert_eq!(
+        key(&mut ui, Key::Enter, true).unwrap(),
+        Disposition::Consumed
+    );
+    assert_eq!(
+        ui.peek_actions().unwrap().actions,
+        vec![Action::SubmitChat {
+            text: "hello".into()
+        }]
+    );
+}
+
+#[test]
+fn rejected_submit_still_owns_repeats_and_release_after_focus_loss() {
+    let mut ui = ui();
+    commit(&mut ui, "first");
+    ui.apply(Input::Activate(SUBMIT)).unwrap();
+    commit(&mut ui, "second");
+    let before = ui.snapshot();
+    assert_eq!(key(&mut ui, Key::Enter, true), Err(UiError::QueueFull));
+    assert_eq!(ui.snapshot(), before);
+    ui.apply(Input::Focus(None)).unwrap();
+    assert_eq!(
+        ui.apply(Input::Key(KeyEvent {
+            key: Key::Enter,
+            pressed: true,
+            repeat: true
+        }))
+        .unwrap(),
+        Disposition::Consumed
+    );
+    assert_eq!(
+        key(&mut ui, Key::Enter, false).unwrap(),
+        Disposition::Consumed
+    );
+    assert_eq!(
+        key(&mut ui, Key::Enter, true).unwrap(),
+        Disposition::Unhandled
+    );
+    assert_eq!(ui.snapshot().composer.committed, "second");
+}

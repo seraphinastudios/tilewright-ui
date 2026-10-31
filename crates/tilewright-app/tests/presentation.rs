@@ -102,3 +102,22 @@ fn surface_invalidation_is_a_durable_control_barrier() {
     assert!(after.epoch > before.epoch);
     assert!(after.world_input_allowed);
 }
+
+#[test]
+fn acknowledging_output_preserves_current_presentation_identity() {
+    let mut app = App::new(Limits::default()).unwrap();
+    app.apply(Input::Focus(Some(COMPOSER))).unwrap();
+    app.apply(Input::TextCommit {
+        target: app.ui().text_target().unwrap(),
+        text: "sent".into(),
+    })
+    .unwrap();
+    app.apply(Input::Activate(tilewright_ui::SUBMIT)).unwrap();
+    let batch = app.ui().peek_actions().unwrap().id;
+    let frame = app.prepare(viewport()).unwrap();
+    app.ack_presented(frame.stamp).unwrap();
+    app.ack_actions(batch).unwrap();
+    app.ack_actions(batch).unwrap();
+    assert!(app.ui().peek_actions().is_none());
+    assert!(app.validate_displayed(frame.stamp).is_ok());
+}

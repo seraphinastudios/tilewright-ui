@@ -4,8 +4,8 @@
 //! Host-neutral lifecycle and acknowledged presentation bookkeeping.
 #![forbid(unsafe_code)]
 use tilewright_ui::{
-    Disposition, Input, Layout, Limits, TextSelection, TextTarget, Ui, UiError, UiRevision,
-    UiSnapshot, WidgetRef,
+    BatchId, Disposition, Input, Layout, Limits, TextSelection, TextTarget, Ui, UiError,
+    UiRevision, UiSnapshot, WidgetRef,
 };
 pub use tilewright_ui::{HitRegion, Paint, Rect, Viewport};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,7 +45,7 @@ pub struct PreparedFrame {
     pub layout: Layout,
 }
 pub type DisplayedFrame = PreparedFrame;
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct App {
     ui: Ui,
     surface: SurfaceEpoch,
@@ -67,12 +67,17 @@ impl App {
             displayed: None,
         })
     }
+    /// Read-only access preserves the context's monotonic presentation identity.
+    ///
+    /// ```compile_fail
+    /// let mut app = tilewright_app::App::new(tilewright_ui::Limits::default()).unwrap();
+    /// *app.ui_mut() = tilewright_ui::Ui::new(tilewright_ui::Limits::default()).unwrap();
+    /// ```
     pub fn ui(&self) -> &Ui {
         &self.ui
     }
-    /// Mutable access is safe: geometric input always checks the live revision.
-    pub fn ui_mut(&mut self) -> &mut Ui {
-        &mut self.ui
+    pub fn ack_actions(&mut self, id: BatchId) -> Result<(), AppError> {
+        Ok(self.ui.ack_actions(id)?)
     }
     pub fn apply(&mut self, input: Input) -> Result<Disposition, AppError> {
         Ok(self.ui.apply(input)?)
