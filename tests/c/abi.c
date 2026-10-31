@@ -86,6 +86,10 @@ int main(void) {
     assert(thrd_join(other, NULL) == thrd_success);
     /* Only an explicit world hit may escape UI routing. Opaque panel gaps and
        points outside the surface must never click the world behind the UI. */
+    twui_input received = input(ctx, TWUI_RECEIVE);
+    received.text = (const uint8_t *)"history"; received.text_len = 7;
+    assert(apply(ctx, received) == TWUI_OK);
+    assert(apply(ctx, received) == TWUI_OK);
     twui_viewport routing_vp = {0}; routing_vp.struct_size = sizeof routing_vp;
     routing_vp.width = 800; routing_vp.height = 600; routing_vp.scale = 1;
     twui_stamp routing_stamp = {0}; routing_stamp.struct_size = sizeof routing_stamp;
@@ -95,6 +99,14 @@ int main(void) {
     assert(twui_pointer(ctx, &routing_stamp, 10, 10, &routing_consumed) == TWUI_OK && routing_consumed == 0);
     assert(twui_pointer(ctx, &routing_stamp, 10, 350, &routing_consumed) == TWUI_OK && routing_consumed == 1);
     assert(twui_pointer(ctx, &routing_stamp, -1, -1, &routing_consumed) == TWUI_OK && routing_consumed == 1);
+    assert(twui_scroll_at(ctx, &routing_stamp, 10, 10, 1, &routing_consumed) == TWUI_OK && routing_consumed == 0);
+    assert(state(ctx).scroll == 0);
+    assert(twui_scroll_at(ctx, &routing_stamp, -1, -1, 1, &routing_consumed) == TWUI_OK && routing_consumed == 1);
+    assert(state(ctx).scroll == 0);
+    assert(twui_scroll_at(ctx, &routing_stamp, 10, 350, 1, &routing_consumed) == TWUI_OK && routing_consumed == 1);
+    assert(state(ctx).scroll == 1);
+    assert(twui_scroll_at(ctx, &routing_stamp, 10, 350, 1, &routing_consumed) == TWUI_STALE);
+
     assert(twui_invalidate_surface(ctx) == TWUI_OK);
 
     toggle(ctx, TWUI_SET_FOCUS, 1);

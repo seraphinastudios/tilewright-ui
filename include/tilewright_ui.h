@@ -145,6 +145,9 @@ twui_status twui_invalidate_surface(twui_context *context);
 /* Only an explicit current WORLD hit can be unhandled; panel gaps and
  * points outside the viewport are consumed. */
 twui_status twui_pointer(twui_context *context, const twui_stamp *stamp, float x, float y, uint32_t *consumed);
+/* Scroll only a positive shared HISTORY hit. Only explicit WORLD may be
+ * unhandled; other UI regions/outside points consume without scrolling. */
+twui_status twui_scroll_at(twui_context *context, const twui_stamp *stamp, float x, float y, int32_t delta, uint32_t *consumed);
 
 #ifdef TWUI_CPU_PROTOTYPE
 /* Available only when built with Cargo feature cpu-prototype. This is the CPU

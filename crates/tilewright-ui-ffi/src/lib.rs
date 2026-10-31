@@ -754,9 +754,39 @@ pub unsafe extern "C" fn twui_pointer(
                     app.apply(tilewright_ui::Input::Activate(tilewright_ui::SUBMIT))
                         .map_err(app_error)?,
                 ),
-                Some(tilewright_ui::WORLD) => {
-                    u32::from(!app.ui().control().world_input_allowed)
-                }
+                Some(tilewright_ui::WORLD) => u32::from(!app.ui().control().world_input_allowed),
+                _ => 1,
+            };
+            consumed.write(value);
+            Ok(())
+        })
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twui_scroll_at(
+    context: *mut Context,
+    stamp: *const Stamp,
+    x: f32,
+    y: f32,
+    delta: i32,
+    consumed: *mut u32,
+) -> u32 {
+    // SAFETY: all foreign pointers obey the public ABI contract.
+    unsafe {
+        with_context(context, |app| {
+            if consumed.is_null() || !x.is_finite() || !y.is_finite() {
+                return Err(INVALID_ARGUMENT);
+            }
+            let hit = app
+                .hit_test(stamp_from_c(read_sized(stamp)?)?, x, y)
+                .map_err(app_error)?;
+            let value = match hit.map(|widget| widget.id) {
+                Some(tilewright_ui::HISTORY) => disposition(
+                    app.apply(tilewright_ui::Input::Scroll(delta))
+                        .map_err(app_error)?,
+                ),
+                Some(tilewright_ui::WORLD) => u32::from(!app.ui().control().world_input_allowed),
                 _ => 1,
             };
             consumed.write(value);
