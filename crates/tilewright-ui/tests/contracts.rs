@@ -210,3 +210,34 @@ fn replacement_and_retention_are_atomic_and_bounded() {
     );
     assert_eq!(ui.snapshot(), before);
 }
+
+#[test]
+fn native_whole_value_composition_commit_is_atomic() {
+    let mut ui = ui();
+    commit(&mut ui, "before");
+    ui.apply(Input::Preedit {
+        target: ui.text_target().unwrap(),
+        text: "候補".into(),
+        start: 0,
+        length: 2,
+    })
+    .unwrap();
+    let before = ui.snapshot();
+    assert_eq!(
+        ui.apply(Input::ReplaceText {
+            target: ui.text_target().unwrap(),
+            text: "done".into(),
+            selection: TextSelection::caret(TextCursor::new(99))
+        }),
+        Err(UiError::InvalidInput)
+    );
+    assert_eq!(ui.snapshot(), before);
+    ui.apply(Input::ReplaceText {
+        target: ui.text_target().unwrap(),
+        text: "done".into(),
+        selection: TextSelection::caret(TextCursor::new(4)),
+    })
+    .unwrap();
+    assert_eq!(ui.snapshot().composer.committed, "done");
+    assert!(ui.snapshot().composer.composition.is_none());
+}

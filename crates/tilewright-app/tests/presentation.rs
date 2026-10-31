@@ -92,3 +92,13 @@ fn stale_text_layout_and_pending_patch_are_rejected() {
     )
     .unwrap();
 }
+
+#[test]
+fn surface_invalidation_is_a_durable_control_barrier() {
+    let mut app = App::new(Limits::default()).unwrap();
+    let before = app.ui().control();
+    app.invalidate_surface().unwrap();
+    let after = app.ui().control();
+    assert!(after.epoch > before.epoch);
+    assert!(after.world_input_allowed);
+}

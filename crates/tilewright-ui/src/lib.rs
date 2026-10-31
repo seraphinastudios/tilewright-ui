@@ -124,6 +124,7 @@ pub enum TextCommand {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Input {
     Focus(Option<WidgetId>),
+    CancelControls,
     Modal(bool),
     Suspend(bool),
     WindowFocused(bool),
@@ -323,10 +324,16 @@ impl Ui {
         self.next_batch = following;
         Ok(())
     }
+    // Keep the semantic transaction cases together so state and revision commits are auditable.
+    #[allow(clippy::too_many_lines)]
     fn apply_inner(&mut self, input: Input) -> Result<Disposition, UiError> {
         let old_text = self.composer.revision();
         let mut changed = false;
         match input {
+            Input::CancelControls => {
+                self.barrier()?;
+                changed = true;
+            }
             Input::Focus(focus) => {
                 if focus.is_some_and(|id| id != COMPOSER && id != SUBMIT && id != MODAL) {
                     return Err(UiError::InvalidInput);
@@ -397,8 +404,9 @@ impl Ui {
                         .keys
                         .iter()
                         .position(|(key, ..)| *key == event.key)
-                        .map(|index| self.keys.remove(index).1)
-                        .unwrap_or(!self.control.world_input_allowed);
+                        .map_or(!self.control.world_input_allowed, |index| {
+                            self.keys.remove(index).1
+                        });
                     if event.key == Key::Enter {
                         self.enter_fenced = false;
                     }
@@ -410,14 +418,13 @@ impl Ui {
                 }
                 if let Some((_, owned, quarantined)) =
                     self.keys.iter().find(|(key, ..)| *key == event.key)
+                    && (*quarantined || !event.repeat)
                 {
-                    if *quarantined || !event.repeat {
-                        return Ok(if *owned {
-                            Disposition::Consumed
-                        } else {
-                            Disposition::Unhandled
-                        });
-                    }
+                    return Ok(if *owned {
+                        Disposition::Consumed
+                    } else {
+                        Disposition::Unhandled
+                    });
                 }
                 let owned = !self.control.world_input_allowed;
                 if !self.keys.iter().any(|(key, ..)| *key == event.key) {
@@ -429,6 +436,15 @@ impl Ui {
                 if !owned {
                     return Ok(Disposition::Unhandled);
                 }
+                if self
+                    .control
+                    .focused_widget
+                    .is_some_and(|widget| widget.id == SUBMIT)
+                    && event.key == Key::Enter
+                    && !event.repeat
+                {
+                    self.submit()?;
+                }
                 if self.control.focused_widget == Some(self.composer_widget()) {
                     match event.key {
                         Key::Enter => {
@@ -439,11 +455,11 @@ impl Ui {
                             }
                         }
                         Key::Backspace if !self.composer.is_composing() => {
-                            self.composer.backspace()?
+                            self.composer.backspace()?;
                         }
                         Key::Delete if !self.composer.is_composing() => self.composer.delete()?,
                         Key::SelectAll if !self.composer.is_composing() => {
-                            self.composer.select_all()?
+                            self.composer.select_all()?;
                         }
                         Key::Escape => self.composer.cancel_preedit()?,
                         _ => (),
@@ -456,9 +472,7 @@ impl Ui {
                 selection,
             } => {
                 self.require_target(target)?;
-                if self.composer.is_composing() {
-                    return Err(UiError::InvalidInput);
-                }
+                self.composer.cancel_preedit()?;
                 self.composer.select_all()?;
                 self.composer.input(&text)?;
                 self.composer
@@ -620,6 +634,8 @@ pub struct Layout {
     pub composer_bounds: Option<Rect>,
 }
 /// The single neutral layout used by all presenters. Text is unshaped.
+// This declarative bounded prototype layout is intentionally kept in paint order.
+#[allow(clippy::too_many_lines)]
 pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiError> {
     let viewport = viewport.validate()?;
     let full = Rect {
@@ -674,15 +690,14 @@ pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiErr
         height: (composer.y - panel.y - 8.0).max(0.0),
         ..panel
     };
-    for (line, text) in snapshot
+    let mut y = composer.y - 26.0;
+    for text in snapshot
         .messages
         .iter()
         .rev()
         .skip(snapshot.scroll)
         .take(64)
-        .enumerate()
     {
-        let y = composer.y - 26.0 - line as f32 * 22.0;
         if y < panel.y {
             break;
         }
@@ -700,6 +715,7 @@ pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiErr
             color: [0.9, 0.9, 0.95, 1.0],
             text_revision: None,
         });
+        y -= 22.0;
     }
     if snapshot.composer_visible {
         paint.push(Paint::Rectangle {

@@ -149,6 +149,7 @@ impl App {
     }
     pub fn invalidate_surface(&mut self) -> Result<SurfaceEpoch, AppError> {
         let next = self.surface.next()?;
+        self.ui.apply(Input::CancelControls)?;
         self.surface = next;
         self.displayed = None;
         self.prepared.clear();
