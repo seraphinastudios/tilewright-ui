@@ -241,3 +241,44 @@ fn native_whole_value_composition_commit_is_atomic() {
     assert_eq!(ui.snapshot().composer.committed, "done");
     assert!(ui.snapshot().composer.composition.is_none());
 }
+
+#[test]
+fn repeated_down_keeps_cancelled_press_ownership_until_release() {
+    for started_in_widget in [false, true] {
+        let mut ui = ui();
+        if !started_in_widget {
+            ui.apply(Input::Focus(None)).unwrap();
+        }
+        let key_code = Key::Other(25);
+        let expected = if started_in_widget {
+            Disposition::Consumed
+        } else {
+            Disposition::Unhandled
+        };
+        assert_eq!(key(&mut ui, key_code, true).unwrap(), expected);
+        if started_in_widget {
+            ui.apply(Input::Focus(None)).unwrap();
+        } else {
+            ui.apply(Input::Modal(true)).unwrap();
+            ui.apply(Input::Modal(false)).unwrap();
+        }
+        assert!(ui.control().world_input_allowed);
+        assert_eq!(
+            ui.apply(Input::Key(KeyEvent {
+                key: key_code,
+                pressed: true,
+                repeat: true
+            }))
+            .unwrap(),
+            Disposition::Consumed
+        );
+        assert_eq!(
+            key(&mut ui, key_code, false).unwrap(),
+            Disposition::Consumed
+        );
+        assert_eq!(
+            key(&mut ui, key_code, true).unwrap(),
+            Disposition::Unhandled
+        );
+    }
+}

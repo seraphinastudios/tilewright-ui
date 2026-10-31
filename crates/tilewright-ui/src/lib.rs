@@ -416,23 +416,26 @@ impl Ui {
                         Disposition::Unhandled
                     });
                 }
-                if let Some((_, owned, quarantined)) =
+                let owned = if let Some((_, owned, quarantined)) =
                     self.keys.iter().find(|(key, ..)| *key == event.key)
-                    && (*quarantined || !event.repeat)
                 {
-                    return Ok(if *owned {
-                        Disposition::Consumed
-                    } else {
-                        Disposition::Unhandled
-                    });
-                }
-                let owned = !self.control.world_input_allowed;
-                if !self.keys.iter().any(|(key, ..)| *key == event.key) {
+                    if *quarantined || !event.repeat {
+                        return Ok(if *owned {
+                            Disposition::Consumed
+                        } else {
+                            Disposition::Unhandled
+                        });
+                    }
+                    // Repeats belong to the original press, even if later routing changes.
+                    *owned
+                } else {
                     if self.keys.len() >= 256 {
                         return Err(UiError::LimitExceeded);
                     }
+                    let owned = !self.control.world_input_allowed;
                     self.keys.push((event.key, owned, false));
-                }
+                    owned
+                };
                 if !owned {
                     return Ok(Disposition::Unhandled);
                 }
