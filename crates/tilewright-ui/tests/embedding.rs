@@ -82,9 +82,6 @@ fn rebind_advances_all_identities_and_preserves_pending_action() {
     let old_target = ui.text_target().unwrap();
     ui.apply(Input::Activate(SUBMIT)).unwrap();
     let old_action = ui.peek_actions().cloned();
-    let before = ui.snapshot();
-    assert_eq!(ui.bind_field("second"), Err(UiError::Stale));
-    assert_eq!(ui.snapshot(), before);
     ui.apply(Input::Preedit {
         target: old_target,
         text: "候補".into(),
@@ -92,8 +89,14 @@ fn rebind_advances_all_identities_and_preserves_pending_action() {
         length: 1,
     })
     .unwrap();
-    ui.apply(Input::Focus(None)).unwrap();
     let before = ui.snapshot();
+    assert_eq!(ui.bind_field("bad\ntext"), Err(UiError::LimitExceeded));
+    assert_eq!(ui.snapshot(), before);
+    assert_eq!(
+        ui.bind_field("x".repeat(ui.limits().composer_bytes + 1)),
+        Err(UiError::LimitExceeded)
+    );
+    assert_eq!(ui.snapshot(), before);
     ui.bind_field("first").unwrap();
     let after = ui.snapshot();
     assert!(after.composer_widget.generation > before.composer_widget.generation);
@@ -101,6 +104,8 @@ fn rebind_advances_all_identities_and_preserves_pending_action() {
     assert!(after.revision > before.revision);
     assert!(after.control.epoch > before.control.epoch);
     assert!(after.composer.composition.is_none());
+    assert_eq!(after.control.focused_widget, None);
+    assert!(after.control.world_input_allowed);
     assert_eq!(after.composer.selection.focus.byte, "first".len());
     assert_eq!(ui.peek_actions().cloned(), old_action);
     let after_bind = after.clone();

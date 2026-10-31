@@ -415,3 +415,17 @@ fn snap_before(text: &str, byte: usize) -> usize {
         .last()
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+
+    #[test]
+    fn exhausted_text_identity_rejects_binding_atomically() {
+        let mut text = TextInput::new("before".into(), 32).unwrap();
+        text.revision = TextRevision::new(u64::MAX).unwrap();
+        let before = text.clone();
+        assert_eq!(text.bind("after".into()), Err(UiError::Exhausted));
+        assert_eq!(text, before);
+    }
+}

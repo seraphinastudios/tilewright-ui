@@ -260,8 +260,8 @@ impl Ui {
         self.composition
     }
     /// Retire a host-bound field identity without consuming pending actions.
-    /// Binding requires an unfocused `SingleField` and advances identities even
-    /// when the bytes are unchanged. Late input for the old binding is stale.
+    /// Binding advances identities even when the bytes are unchanged, clears
+    /// focus and preedit, and makes late input for the old binding stale.
     pub fn bind_field(&mut self, text: impl Into<String>) -> Result<(), UiError> {
         if self.composition != Composition::SingleField {
             return Err(UiError::InvalidInput);
@@ -271,13 +271,13 @@ impl Ui {
         let generation = self.generation.next()?;
         let revision = self.revision.next()?;
         let epoch = self.control.epoch.next()?;
-        if self.control.focused_widget.is_some() {
-            return Err(UiError::Stale);
-        }
         self.composer = composer;
         self.generation = generation;
         self.revision = revision;
         self.control.epoch = epoch;
+        self.control.focused_widget = None;
+        self.control.world_input_allowed =
+            self.window_focused && !self.control.suspended && !self.control.modal_open;
         self.keys.cancel();
         Ok(())
     }
