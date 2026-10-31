@@ -65,6 +65,10 @@ fn main() -> Result<()> {
     let mut displayed_render = None;
     let mut running = true;
     let mut frame_count = 0_u64;
+    synchronize_text(&mut input, &app, &text_input, canvas.window())?;
+    if let Some(trace) = &mut trace {
+        trace.event("startup", false, true, &app, 0)?;
+    }
     while running {
         synchronize_text(&mut input, &app, &text_input, canvas.window())?;
         for event in events.poll_iter() {

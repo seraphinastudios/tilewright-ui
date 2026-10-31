@@ -199,7 +199,8 @@ static void trace_event(struct host *host, const SDL_Event *event) {
     uint8_t text[4096]; uint64_t size = 0; char composer[8193], preedit[8193], name[80], line[18000];
     check(twui_copy_text(host->ui, TWUI_TEXT_COMPOSER, 0, text, sizeof(text), &size), "trace composer"); hex_bytes(text,size,composer);
     check(twui_copy_text(host->ui, TWUI_TEXT_PREEDIT, 0, text, sizeof(text), &size), "trace preedit"); hex_bytes(text,size,preedit);
-    if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) snprintf(name,sizeof(name),"key_%s:%u",event->type == SDL_EVENT_KEY_DOWN ? "down" : "up", (unsigned)event->key.scancode);
+    if (!event) strcpy(name,"startup");
+    else if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) snprintf(name,sizeof(name),"key_%s:%u",event->type == SDL_EVENT_KEY_DOWN ? "down" : "up", (unsigned)event->key.scancode);
     else if (event->type == SDL_EVENT_TEXT_INPUT) strcpy(name,"text_input");
     else if (event->type == SDL_EVENT_TEXT_EDITING) strcpy(name,"preedit");
     else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) strcpy(name,"pointer_down");
@@ -282,6 +283,7 @@ int main(int argc, char **argv) {
     (void)apply(&host, text_input(&host, TWUI_RECEIVE, "Tab: chat focus · F1: modal · Ctrl+A/C/V: clipboard"));
     (void)apply(&host, text_input(&host, TWUI_RECEIVE, "Neutral procedural map. CPU reference rendering."));
     (void)apply(&host, (twui_input){ .kind = TWUI_SET_FOCUS, .value = 1 });
+    trace_event(&host,NULL);
     bool running = true; uint64_t frames = 0;
     while (running) {
         SDL_Event current; while (SDL_PollEvent(&current)) { if (!event(&host, &current)) running = false; trace_event(&host, &current); }
