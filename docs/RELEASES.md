@@ -3,8 +3,27 @@
 The current workspace is an unpublished prototype. Every package has
 `publish = false`; declaring version `0.1.0` does not reserve a registry name or
 authorize an upload. Renderer `0.6.0` and its immutable source release remain an
-independent, unchanged delivery. This workspace targets the separately prepared
-`0.6.2` successor; its production registry lock remains pending that release.
+independent, unchanged delivery. This workspace targets the published `0.6.2` successor through a committed
+registry-only `Cargo.lock`. This dependency qualification does not publish or
+stabilize the UI packages.
+
+## Renderer dependency provenance
+
+Renderer `0.6.2` was published from immutable source release `v1.21.0`
+(release ID `429939049`), revision
+`55f13ac311a5574b242e2520942377e51fd6b7cb`. Its `crate-release.json` SHA-256 is
+`a5f5157fed68245b7eb74766f82a66b85f58920e31382512c3462d61dc14d43f`.
+All eight released crate archives were verified against the release manifest,
+registry archive bytes and sparse-index checksums, with owner `zoeyrose`
+(registry user ID `437663`). Every intra-family dependency requires `=0.6.2`.
+
+The lock contains seven family packages, all from crates.io at `0.6.2` with the
+verified archive checksums. The eighth, `tilewright-render-sdl3`, is pinned in
+workspace dependencies but unused by current workspace packages; its compatible
+release was verified separately. The native example uses `sdl3` directly.
+This is the first committed lockfile, so there is no earlier committed
+transitive-version baseline to compare. Future updates must preserve a verified,
+compatible renderer cohort and review the full lockfile delta.
 
 ## Proposed first package family
 
@@ -12,7 +31,7 @@ independent, unchanged delivery. This workspace targets the separately prepared
 | --- | --- | --- |
 | `tilewright-ui` | Unicode segmentation | Unpublished headless core |
 | `tilewright-app` | `tilewright-ui` | Unpublished host coordination |
-| `tilewright-ui-render` | `tilewright-ui`, renderer `0.6.2` APIs (release pending) | Unpublished renderer adapter |
+| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.6.2` APIs | Unpublished renderer adapter |
 | `tilewright-ui-ffi` | `tilewright-ui`, `tilewright-app`; optional UI renderer | Unpublished C facade |
 
 The native demo and browser host packages remain unpublished. Avoid creating

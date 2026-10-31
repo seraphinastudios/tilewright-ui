@@ -29,14 +29,13 @@ model. Build and browser tests do not establish OS IME, screen-reader or Classic
 integration support; those capabilities require their own actual host evidence.
 
 Rust 1.97.1 is pinned. The renderer dependency targets the independent `0.6.2`
-family, whose publication is being prepared. Before checks, prepare the
-separately licensed font data outside the checkout and, once that family is
-published, resolve the real registry lock:
+family published from renderer source release `v1.21.0`. The committed
+`Cargo.lock` resolves registry packages only. Before checks, prepare the
+separately licensed font data outside the checkout:
 
 ```sh
 python3 tools/prepare-fonts.py /absolute/private/font-pack --acquire
 export TILEWRIGHT_UI_FONT_ROOT=/absolute/private/font-pack
-cargo generate-lockfile
 bash tools/check.sh
 bash tools/check-c.sh cpu-prototype
 ```
