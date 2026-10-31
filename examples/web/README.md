@@ -15,7 +15,8 @@ pack, then run `examples/web/build.sh` from this repository. Serve
 `examples/web/` on localhost, for example with `python3 -m http.server --directory
 examples/web 8080`, and open `/index.html`. Add `?backend=webgl2` or
 `?backend=webgpu` for an explicit backend. Failure reports a visible error;
-there is no Canvas 2D world fallback or runtime asset discovery/download.
+there is no Canvas 2D world fallback or runtime asset discovery. Font assets
+are served locally with the page; no CDN or external font download is used.
 
 The build stages fonts into ignored `assets/font-pack/` and WASM into ignored
 `pkg/`. `stage-fonts.py` validates every font and OFL notice before copying and

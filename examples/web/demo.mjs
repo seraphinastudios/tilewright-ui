@@ -66,6 +66,11 @@ class DomHost {
     try {operation();this.acceptPending();}catch(error){success=false;this.report(error);}
     this.render();return success;
   }
+  geometric(operation) {
+    try {if(!this.stamp)throw new Error('Layout unavailable');this.app.validate_displayed(this.stamp);}
+    catch(error){this.report(error);this.render();return false;}
+    return this.change(operation);
+  }
   acceptPending() {
     if(!this.options.autoAccept)return;
     // One monotonically acknowledged batch cursor; no unbounded retry store.
@@ -157,15 +162,15 @@ class DomHost {
     });
     // Pointer activation keeps the composer selection for Send and Paste.
     for(const button of [this.send,this.pasteButton])this.on(button,'pointerdown',event=>event.preventDefault());
-    this.on(this.send,'click',()=>{if(!this.composition)this.change(()=>this.app.submit());});
-    this.on(this.pasteButton,'click',()=>{void this.paste();});
-    this.on(this.modalButton,'click',()=>this.change(()=>this.app.modal(true)));
-    this.on(this.closeButton,'click',()=>this.change(()=>this.app.modal(false)));
+    this.on(this.send,'click',()=>{if(!this.composition)this.geometric(()=>this.app.submit());});
+    this.on(this.pasteButton,'click',()=>this.geometric(()=>{void this.paste();}));
+    this.on(this.modalButton,'click',()=>this.geometric(()=>this.app.modal(true)));
+    this.on(this.closeButton,'click',()=>this.geometric(()=>this.app.modal(false)));
     this.on(this.dialog,'cancel',event=>{event.preventDefault();this.change(()=>this.app.modal(false));});
     this.on(this.dialog,'close',()=>{if(this.snapshot().control.modal)this.change(()=>this.app.modal(false));});
-    this.on(this.older,'click',()=>this.change(()=>this.app.scroll(1)));
-    this.on(this.newer,'click',()=>this.change(()=>this.app.scroll(-1)));
-    this.on(this.history,'wheel',event=>{event.preventDefault();this.change(()=>this.app.scroll(Math.sign(event.deltaY)));},{passive:false});
+    this.on(this.older,'click',()=>this.geometric(()=>this.app.scroll(1)));
+    this.on(this.newer,'click',()=>this.geometric(()=>this.app.scroll(-1)));
+    this.on(this.history,'wheel',event=>{event.preventDefault();this.geometric(()=>this.app.scroll(Math.sign(event.deltaY)));},{passive:false});
     this.on(window,'keydown',event=>this.key(event,true),{capture:true});
     this.on(window,'keyup',event=>this.key(event,false),{capture:true});
     this.on(window,'blur',()=>{this.cancelComposition();this.inputToken=null;this.clipboard.cancel();this.change(()=>this.app.window_focused(false));});
