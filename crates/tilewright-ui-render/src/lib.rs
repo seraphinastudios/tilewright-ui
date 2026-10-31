@@ -10,6 +10,8 @@ mod resources;
 use std::{collections::HashSet, fmt, sync::Arc};
 use tilewright_render_resources::ResourceProvider;
 pub use tilewright_render_ui::UiLimits;
+/// Verified font-pack metadata for explicit host loading; contains no font bytes.
+pub use tilewright_render_ui::unicode_fonts;
 pub use tilewright_render_ui::{
     FontBlob, FontPack, TextAffinity, TextCursor, TextLimits, UnicodeLayout, VisualMotion,
 };
