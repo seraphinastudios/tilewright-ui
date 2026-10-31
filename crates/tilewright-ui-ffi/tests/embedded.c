@@ -56,6 +56,10 @@ static void embedded_field(void) {
     twui_input preedit = input(ctx, TWUI_PREEDIT);
     preedit.text = (const uint8_t *)"x"; preedit.text_len = 1;
     assert(apply(ctx, preedit) == TWUI_OK);
+    twui_state focused = state(ctx);
+    assert(twui_bind_field(ctx, (const uint8_t *)"new", 3, &widget) == TWUI_STALE);
+    unchanged(focused, state(ctx));
+    toggle(ctx, TWUI_SET_FOCUS, 0);
     assert(twui_bind_field(ctx, (const uint8_t *)"new", 3, &widget) == TWUI_OK);
     twui_state rebound = state(ctx);
     assert(rebound.widget_generation > bound.widget_generation);

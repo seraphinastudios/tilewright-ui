@@ -781,7 +781,7 @@ pub unsafe extern "C" fn twui_bind_field(
             check_size(output)?;
             let text = span_text(text, length, app.ui().limits().composer_bytes)?;
             app.bind_field(text).map_err(app_error)?;
-            let widget = app.ui().snapshot().composer_widget;
+            let widget = app.ui().composer_widget();
             output.write(WidgetRef {
                 struct_size: size_of::<WidgetRef>() as u32,
                 reserved: 0,
