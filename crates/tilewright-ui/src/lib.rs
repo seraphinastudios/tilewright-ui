@@ -5,7 +5,9 @@
 #![forbid(unsafe_code)]
 
 use std::collections::VecDeque;
+mod keys;
 mod text;
+use keys::KeyLedger;
 pub use text::{
     CompositionSnapshot, TextAffinity, TextCursor, TextInput, TextInputSnapshot, TextSelection,
     scalar_selection_bytes,
@@ -186,7 +188,7 @@ pub struct Ui {
     acknowledged: u64,
     control: ControlSnapshot,
     window_focused: bool,
-    keys: Vec<(Key, bool, bool)>,
+    keys: KeyLedger,
     enter_fenced: bool,
 }
 impl Ui {
@@ -224,7 +226,7 @@ impl Ui {
                 suspended: false,
             },
             window_focused: true,
-            keys: Vec::new(),
+            keys: KeyLedger::new(),
             enter_fenced: false,
         })
     }
@@ -297,10 +299,7 @@ impl Ui {
     }
     fn barrier(&mut self) -> Result<(), UiError> {
         self.control.epoch = self.control.epoch.next()?;
-        for (_, owned, quarantined) in &mut self.keys {
-            *owned = true;
-            *quarantined = true;
-        }
+        self.keys.cancel();
         self.control.world_input_allowed = self.window_focused
             && !self.control.suspended
             && !self.control.modal_open
@@ -423,11 +422,8 @@ impl Ui {
                 if !event.pressed {
                     let owned = self
                         .keys
-                        .iter()
-                        .position(|(key, ..)| *key == event.key)
-                        .map_or(!self.control.world_input_allowed, |index| {
-                            self.keys.remove(index).1
-                        });
+                        .release(event.key)
+                        .unwrap_or(!self.control.world_input_allowed);
                     if event.key == Key::Enter {
                         self.enter_fenced = false;
                     }
@@ -437,24 +433,19 @@ impl Ui {
                         Disposition::Unhandled
                     });
                 }
-                let owned = if let Some((_, owned, quarantined)) =
-                    self.keys.iter().find(|(key, ..)| *key == event.key)
-                {
-                    if *quarantined || !event.repeat {
-                        return Ok(if *owned {
+                let owned = if let Some((owned, quarantined)) = self.keys.state(event.key) {
+                    if quarantined || !event.repeat {
+                        return Ok(if owned {
                             Disposition::Consumed
                         } else {
                             Disposition::Unhandled
                         });
                     }
                     // Repeats belong to the original press, even if later routing changes.
-                    *owned
+                    owned
                 } else {
-                    if self.keys.len() >= 256 {
-                        return Err(UiError::LimitExceeded);
-                    }
                     let owned = !self.control.world_input_allowed;
-                    self.keys.push((event.key, owned, false));
+                    self.keys.press(event.key, owned);
                     owned
                 };
                 if !owned {

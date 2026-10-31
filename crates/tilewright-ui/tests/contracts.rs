@@ -356,3 +356,43 @@ fn rejected_submit_still_owns_repeats_and_release_after_focus_loss() {
     );
     assert_eq!(ui.snapshot().composer.committed, "second");
 }
+
+#[test]
+fn more_than_256_presses_and_domain_endpoints_keep_ownership_after_blur() {
+    let mut ui = ui();
+    commit(&mut ui, "first");
+    ui.apply(Input::Activate(SUBMIT)).unwrap();
+    commit(&mut ui, "second");
+    for code in 0..257 {
+        assert_eq!(
+            key(&mut ui, Key::Other(code), true).unwrap(),
+            Disposition::Consumed
+        );
+    }
+    assert_eq!(
+        key(&mut ui, Key::Other(u16::MAX), true).unwrap(),
+        Disposition::Consumed
+    );
+    let before = ui.snapshot();
+    assert_eq!(key(&mut ui, Key::Enter, true), Err(UiError::QueueFull));
+    assert_eq!(ui.snapshot(), before);
+    ui.apply(Input::Focus(None)).unwrap();
+    for held in [
+        Key::Other(0),
+        Key::Other(256),
+        Key::Other(u16::MAX),
+        Key::Enter,
+    ] {
+        assert_eq!(
+            ui.apply(Input::Key(KeyEvent {
+                key: held,
+                pressed: true,
+                repeat: true
+            }))
+            .unwrap(),
+            Disposition::Consumed
+        );
+        assert_eq!(key(&mut ui, held, false).unwrap(), Disposition::Consumed);
+        assert_eq!(key(&mut ui, held, true).unwrap(), Disposition::Unhandled);
+    }
+}
