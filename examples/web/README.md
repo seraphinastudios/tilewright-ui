@@ -43,7 +43,9 @@ grapheme boundaries. IDs and revisions cross as checked decimal strings.
 
 Native `beforeinput`/`input` supplies one complete value and selection;
 Backspace/Delete are never also applied by keydown. Composition updates remain
-transient, Enter cannot submit during composition, and completion commits the
+transient. Enter carries its physical identity and platform composition flag to
+Rust, which fences submission until that key releases even when preedit is empty.
+Completion commits the
 whole native value atomically with exact owner/revision fencing. The browser
 owns native candidate positioning; composition events do not expose a reliable
 candidate selection, so that capability is explicitly unavailable to Rust.
@@ -59,7 +61,10 @@ records the most recent accepted batch ID before acknowledging, and keeps no
 unbounded retry queue. `autoAccept:false` permits backpressure experiments.
 Clipboard reads are limited to one outstanding request and carry the originating
 widget, control epoch and text revision. Denial or stale completion cannot edit
-a newer draft.
+a newer draft. Cancelled IME sessions retire their native input element and its
+listeners; a fresh node carries the authoritative selection. A retained session
+marker rejects late composition commits across intervening pointer/key activity
+until a new composition lifecycle starts.
 
 `browserKey` maps `event.code` to stable physical IDs, including distinct
 Enter/NumpadEnter and left/right modifiers. Unknown codes do not acquire world

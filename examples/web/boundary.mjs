@@ -86,12 +86,15 @@ export function physicalCode(code) {
 }
 
 // Non-text commands only. Native input/composition performs edits once through
-// replace/preedit; Backspace, Delete, selection and clipboard are never applied
+// replace/preedit; composing Enter retains its semantic and an explicit platform
+// composition flag so Rust fences that physical key until release.
+// Backspace, Delete, selection and clipboard are never applied
 // a second time by this key bridge. Custom key effects require keyEffects=true
 // after a successful call, independently of consumed=true.
 export function browserKey(app,event,pressed) {
   const physical=physicalCode(event.code);
   const composing=event.isComposing || event.keyCode === 229;
-  const command=composing ? 'other' : event.key === 'Enter' ? 'enter' : event.key === 'Escape' ? 'escape' : 'other';
-  return JSON.parse(app.key(physical,command,pressed,Boolean(event.repeat)));
+  const enter=event.key==='Enter'||(composing&&['Enter','NumpadEnter'].includes(event.code));
+  const command=enter?'enter':event.key==='Escape'?'escape':'other';
+  return JSON.parse(app.key(physical,command,pressed,Boolean(event.repeat),Boolean(composing)));
 }

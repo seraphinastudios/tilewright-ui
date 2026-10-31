@@ -33,7 +33,7 @@ class DomHost {
   constructor(root,app,options) {
     this.root=root;this.app=app;this.options=options;this.abort=new AbortController();
     this.clipboard=new ClipboardRead();this.presses=new PressOwnership();this.worldKeys=new Set();
-    this.stamp=null;this.composition=null;this.inputToken=null;this.awaitFreshEdit=false;this.presentedScroll=null;this.rendering=false;this.dirty=false;this.disposed=false;this.accepted='0';
+    this.stamp=null;this.composition=null;this.inputToken=null;this.awaitFreshEdit=false;this.retiredComposition=null;this.replacingInput=false;this.presentedScroll=null;this.rendering=false;this.dirty=false;this.disposed=false;this.accepted='0';
     root.classList.add('shared-demo');
     this.canvas=element('canvas',{'aria-label':'Neutral Tilewright world'});
     this.worldState=element('p',{class:'world-state','aria-live':'off'},'World controls released');
@@ -102,11 +102,29 @@ class DomHost {
     const session=this.composition;
     this.composition=null;this.inputToken=null;
     if(!session)return;
-    this.awaitFreshEdit=true;
+    this.awaitFreshEdit=true;this.retiredComposition={owner:[...session.owner]};
     const state=this.snapshot();
     // Cancel only the exact preedit this session produced. A newer independent
     // owner/revision is never cancelled merely because an old callback arrived.
     if(state.composing&&state.generation===session.owner[0]&&state.textRevision===session.owner[2]&&state.control.focused==='1')this.app.cancel_composition(...this.target(state));
+    this.retireInput();
+  }
+  retireInput() {
+    // A retired native input can still receive browser-queued IME events. Its
+    // listeners are aborted and the node is never reused by a new edit session.
+    const old=this.input;
+    const focused=document.activeElement===old;
+    const next=old.cloneNode(false);
+    const state=this.snapshot();next.value=state.text;
+    this.replacingInput=true;
+    try {
+      this.inputAbort?.abort();this.input=next;old.replaceWith(next);this.bindInput();
+      if(focused)next.focus({preventScroll:true});
+      next.setSelectionRange(Math.min(state.anchor,state.focus),Math.max(state.anchor,state.focus),state.anchor>state.focus?'backward':'forward');
+    } finally {this.replacingInput=false;}
+  }
+  retiredCompositionEvent(event) {
+    return this.retiredComposition&&!this.composition&&(event.isComposing||/composition/i.test(event.inputType??''));
   }
   reconcileComposition() {
     if(this.composition&&this.composition.owner.some((value,index)=>value!==this.target()[index]))this.cancelComposition();
@@ -124,41 +142,49 @@ class DomHost {
     const session=this.composition;this.composition=null;this.inputToken=null;
     if(!this.change(()=>this.app.replace(exactText(this.input.value),anchor,focus,...target))&&session){this.composition=session;this.cancelComposition();this.render();}
   }
-  install() {
-    this.on(this.input,'focus',()=>this.change(()=>this.focusFor(this.input)));
-    this.on(this.root,'focusin',event=>{if(event.target!==this.input)this.change(()=>this.focusFor(event.target));});
-    this.on(this.root,'focusout',event=>{
-      if(event.target===this.input){this.cancelComposition();this.inputToken=null;this.clipboard.cancel();}
-      this.change(()=>this.focusFor(event.relatedTarget));
-    });
-    this.on(this.input,'pointerdown',event=>{
+  bindInput() {
+    const node=this.input;
+    this.inputAbort?.abort();this.inputAbort=new AbortController();
+    const on=(name,handler)=>node.addEventListener(name,event=>{if(node===this.input)handler(event);},{signal:this.inputAbort.signal});
+    on('focus',()=>{if(!this.replacingInput)this.change(()=>this.focusFor(this.input));});
+    on('pointerdown',event=>{
       try {if(!this.stamp)throw new Error('Layout unavailable');this.app.validate_displayed(this.stamp);this.awaitFreshEdit=false;}
       catch(error){event.preventDefault();this.report(error);}
     });
-    this.on(document,'selectionchange',()=>{
-      if(document.activeElement===this.input&&!this.composition)this.change(()=>this.syncSelection());
-    });
-    this.on(this.input,'beforeinput',event=>{
+    on('beforeinput',event=>{
+      if(this.retiredCompositionEvent(event)){event.preventDefault();this.inputToken=null;this.render();return;}
       if(this.awaitFreshEdit){event.preventDefault();this.render();return;}
       if(event.isComposing||this.composition)return;
       try {this.syncSelection();this.render();this.inputToken=this.target();}
       catch(error){event.preventDefault();this.report(error);this.render();}
     });
-    this.on(this.input,'input',event=>{if(!event.isComposing&&(!this.composition||this.composition.ending))this.finishInput();});
-    this.on(this.input,'compositionstart',()=>{
-      try {this.awaitFreshEdit=false;this.syncSelection();this.composition={owner:this.target(),ending:false};}
+    on('input',event=>{if(this.retiredCompositionEvent(event)){this.inputToken=null;this.render();return;}if(!event.isComposing&&(!this.composition||this.composition.ending))this.finishInput();});
+    on('compositionstart',()=>{
+      try {this.retiredComposition=null;this.awaitFreshEdit=false;this.syncSelection();this.composition={owner:this.target(),ending:false};}
       catch(error){this.report(error);}
     });
-    this.on(this.input,'compositionupdate',event=>{
+    on('compositionupdate',event=>{
       if(!this.composition)return;
       const state=this.snapshot();
       if(this.composition.owner.some((value,index)=>value!==this.target(state)[index])){this.cancelComposition();this.render();return;}
       this.change(()=>{this.app.preedit(exactText(event.data),...this.target(state));this.composition.owner=this.target();});
     });
-    this.on(this.input,'compositionend',()=>{
+    on('compositionend',()=>{
       if(!this.composition)return;
       const session=this.composition;session.ending=true;
-      queueMicrotask(()=>{if(this.composition===session&&!this.disposed)this.finishInput();});
+      queueMicrotask(()=>{if(node===this.input&&this.composition===session&&!this.disposed)this.finishInput();});
+    });
+  }
+  install() {
+    this.bindInput();
+    this.on(this.root,'focusin',event=>{if(!this.replacingInput&&event.target!==this.input)this.change(()=>this.focusFor(event.target));});
+    this.on(this.root,'focusout',event=>{
+      if(this.replacingInput)return;
+      if(event.target===this.input){this.cancelComposition();this.inputToken=null;this.clipboard.cancel();}
+      this.change(()=>this.focusFor(event.relatedTarget));
+    });
+    this.on(document,'selectionchange',()=>{
+      if(document.activeElement===this.input&&!this.composition)this.change(()=>this.syncSelection());
     });
     // Pointer activation keeps the composer selection for Send and Paste.
     for(const button of [this.send,this.pasteButton])this.on(button,'pointerdown',event=>event.preventDefault());
@@ -185,7 +211,7 @@ class DomHost {
     if(this.disposed)return;
     const inComposer=event.target===this.input;
     const composing=Boolean(this.composition)||event.isComposing||event.keyCode===229;
-    const commandEvent=(!inComposer&&event.target!==this.send)||composing?{code:event.code,key:'',repeat:event.repeat,isComposing:composing}:event;
+    const commandEvent={code:event.code,key:!inComposer&&event.target!==this.send?'':event.key,repeat:event.repeat,isComposing:composing,keyCode:event.keyCode};
     try {
       // Native selection defaults (Ctrl+A/arrows) can precede keyup before
       // selectionchange is delivered; import them before repainting the caret.
@@ -260,7 +286,7 @@ class DomHost {
   }
   dispose() {
     if(this.disposed)return;
-    this.disposed=true;this.abort.abort();this.resize?.disconnect();this.clipboard.cancel();
+    this.disposed=true;this.abort.abort();this.inputAbort?.abort();this.resize?.disconnect();this.clipboard.cancel();
     this.app.suspend(true);this.app.invalidate_surface();this.stamp=null;this.worldKeys.clear();
     this.world?.free();this.app.free();this.root.replaceChildren();
   }

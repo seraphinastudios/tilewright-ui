@@ -117,11 +117,25 @@ test('DOM presenter commits native editing, modal focus, scrolling and clipboard
       node.dispatchEvent(new CompositionEvent('compositionupdate',{data:'漢字',bubbles:true}));
       node.dispatchEvent(new InputEvent('input',{inputType:'insertCompositionText',data:'漢字',isComposing:true,bubbles:true}));
     });
-    await input.press('Enter');
+    await page.keyboard.down('Enter');
     assert.equal(await page.evaluate(()=>demo.app.peek_actions()),'null');
     assert.equal(await page.evaluate(()=>demo.snapshot().composing),true);
     await input.evaluate(node=>node.dispatchEvent(new CompositionEvent('compositionend',{data:'漢字',bubbles:true})));
     await page.waitForFunction(()=>demo.snapshot().text==='draft漢字'&&!demo.snapshot().composing);
+    await page.getByRole('button',{name:'Send',exact:true}).click();
+    assert.equal(await input.inputValue(),'draft漢字');
+    await page.keyboard.up('Enter');
+    await page.getByRole('button',{name:'Send',exact:true}).click();
+    assert.equal(await input.inputValue(),'');
+    await input.fill('empty preedit fence');
+    await input.evaluate(node=>node.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true})));
+    await page.keyboard.down('Enter');
+    await input.evaluate(node=>node.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true})));
+    await page.getByRole('button',{name:'Send',exact:true}).click();
+    assert.equal(await input.inputValue(),'empty preedit fence');
+    await page.keyboard.up('Enter');
+    await page.getByRole('button',{name:'Send',exact:true}).click();
+    assert.equal(await input.inputValue(),'');
     // A surface epoch change cancels its exact preedit and rejects trailing
     // events even after native focus still points at the same input element.
     await input.fill('anchor');
@@ -142,11 +156,20 @@ test('DOM presenter commits native editing, modal focus, scrolling and clipboard
     await input.press('End');await page.keyboard.type('x');
     assert.equal(await input.inputValue(),'anchorx');
     await input.evaluate(node=>{
+      globalThis.retiredImeNode=node;
       node.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
       node.value='anchorx候補';node.setSelectionRange(node.value.length,node.value.length);
       node.dispatchEvent(new CompositionEvent('compositionupdate',{data:'候補',bubbles:true}));
     });
     await input.press('Escape');
+    assert.equal(await page.evaluate(()=>retiredImeNode.isConnected),false);
+    await input.click();
+    await page.evaluate(()=>{
+      retiredImeNode.value='old native target';
+      retiredImeNode.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true}));
+      retiredImeNode.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertText',bubbles:true,cancelable:true}));
+      retiredImeNode.dispatchEvent(new InputEvent('input',{inputType:'insertText',bubbles:true}));
+    });
     await input.evaluate(node=>{
       node.value='late cancelled commit';node.setSelectionRange(node.value.length,node.value.length);
       node.dispatchEvent(new CompositionEvent('compositionend',{data:'候補',bubbles:true}));

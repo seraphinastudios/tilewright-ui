@@ -28,7 +28,7 @@ export async function createUi() {
     scroll:delta=>call('scroll',delta),
     submit:()=>call('submit'),
     key_effects:physical=>call('key_effects',physical),
-    key:(physical,command,pressed,repeat)=>call('key',physical,exactText(command),pressed,repeat),
+    key:(physical,command,pressed,repeat,platformComposing=false)=>call('key',physical,exactText(command),pressed,repeat,platformComposing),
     replace:(text,anchor,focus,generation,epoch,revision)=>call('replace',exactText(text),anchor,focus,...token(generation,epoch,revision)),
     preedit:(text,generation,epoch,revision)=>call('preedit',exactText(text),...token(generation,epoch,revision)),
     cancel_composition:(generation,epoch,revision)=>call('cancel_composition',...token(generation,epoch,revision)),

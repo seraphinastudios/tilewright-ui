@@ -150,6 +150,7 @@ impl BrowserUi {
         command: &str,
         pressed: bool,
         repeat: bool,
+        platform_composing: bool,
     ) -> Result<String> {
         let physical = u16::try_from(offset(physical)?).map_err(error)?;
         if physical == 0 {
@@ -168,6 +169,7 @@ impl BrowserUi {
                 key,
                 pressed,
                 repeat,
+                platform_composing,
             }))
             .map_err(error)?;
         Ok(json!({"consumed": disposition == Disposition::Consumed,
@@ -361,7 +363,8 @@ mod tests {
         let mut ui = BrowserUi::new().unwrap();
         ui.focus(true).unwrap();
         let key = |ui: &mut BrowserUi, physical, pressed, repeat| -> Value {
-            serde_json::from_str(&ui.key(physical, "other", pressed, repeat).unwrap()).unwrap()
+            serde_json::from_str(&ui.key(physical, "other", pressed, repeat, false).unwrap())
+                .unwrap()
         };
         assert_eq!(key(&mut ui, 11., true, false)["keyEffects"], true);
         assert_eq!(key(&mut ui, 12., true, false)["keyEffects"], true);
@@ -382,9 +385,9 @@ mod tests {
         let mut ui = BrowserUi::new().unwrap();
         ui.focus(true).unwrap();
         replace(&mut ui, "first");
-        ui.key(11., "enter", true, false).unwrap();
+        ui.key(11., "enter", true, false, false).unwrap();
         replace(&mut ui, "second");
-        ui.key(12., "enter", true, false).unwrap();
+        ui.key(12., "enter", true, false, false).unwrap();
         let first: Value = serde_json::from_str(&ui.peek_actions()).unwrap();
         assert_eq!(first["actions"][0]["text"], "first");
         ui.ack_actions(first["id"].as_str().unwrap()).unwrap();
@@ -392,9 +395,24 @@ mod tests {
         assert_eq!(second["actions"][0]["text"], "second");
         let before = ui.snapshot().unwrap();
         for physical in [0., -1., 65_536., 1.5, f64::NAN] {
-            assert!(ui.key(physical, "enter", true, false).is_err());
+            assert!(ui.key(physical, "enter", true, false, false).is_err());
             assert_eq!(ui.snapshot().unwrap(), before);
         }
+    }
+
+    #[test]
+    fn platform_composing_enter_fences_button_without_visible_preedit() {
+        let mut ui = BrowserUi::new().unwrap();
+        ui.focus(true).unwrap();
+        replace(&mut ui, "draft");
+        ui.key(11., "enter", true, false, true).unwrap();
+        assert!(!ui.key_effects(11.).unwrap());
+        ui.submit().unwrap();
+        assert_eq!(ui.peek_actions(), "null");
+        assert_eq!(state(&ui)["text"], "draft");
+        ui.key(11., "enter", false, false, false).unwrap();
+        ui.submit().unwrap();
+        assert_ne!(ui.peek_actions(), "null");
     }
 
     #[test]

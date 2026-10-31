@@ -33,6 +33,8 @@ test('browser physical IDs separate Enter sources and native edit semantics', as
   assert.deepEqual(browserKey(app,{code:'Enter',key:'Enter',isComposing:true},true),{consumed:true,keyEffects:false});
   browserKey(app,{code:'NumpadEnter',key:'Enter',repeat:false},true);
   browserKey(app,{code:'Backspace',key:'Backspace'},true);
-  assert.deepEqual(calls.map(call=>call[1]),['other','enter','other']);
+  assert.deepEqual(calls.map(call=>call[1]),['enter','enter','other']);
   assert.notEqual(calls[0][0],calls[1][0]);
+  assert.equal(calls[0][4],true);
+  assert.equal(calls[1][4],false);
 });
