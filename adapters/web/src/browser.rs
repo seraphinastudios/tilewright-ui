@@ -305,6 +305,27 @@ mod tests {
         assert_eq!(state(&ui)["text"], "");
     }
     #[test]
+    fn refuses_lossy_browser_numbers_before_modifying_state() {
+        let mut ui = BrowserUi::new().unwrap();
+        ui.focus(true).unwrap();
+        let state = state(&ui);
+        let before = ui.snapshot().unwrap();
+        for position in [f64::NAN, f64::INFINITY, -1., 0.5, 4_294_967_296.] {
+            assert!(
+                ui.replace(
+                    "",
+                    position,
+                    position,
+                    state["generation"].as_str().unwrap(),
+                    state["control"]["epoch"].as_str().unwrap(),
+                    state["textRevision"].as_str().unwrap()
+                )
+                .is_err()
+            );
+            assert_eq!(ui.snapshot().unwrap(), before);
+        }
+    }
+    #[test]
     fn stale_revisions_and_uncommitted_geometry_cannot_edit() {
         let mut ui = BrowserUi::new().unwrap();
         ui.focus(true).unwrap();
