@@ -18,10 +18,15 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Prepare exact licensed font pack outside source
+        run: |
+          font_root="${RUNNER_TEMP}/tilewright-ui-fonts"
+          python3 tools/prepare-fonts.py "$font_root" --acquire
+          printf 'TILEWRIGHT_UI_FONT_ROOT=%s\n' "$font_root" >> "$GITHUB_ENV"
       - name: Check source, tests and strict Clippy
         run: bash tools/check.sh
       - name: C17 ABI link and lifecycle tests
-        run: bash tools/check-c.sh
+        run: bash tools/check-c.sh cpu-prototype
       - name: Install pinned compiler's browser target
         run: rustup target add --toolchain 1.97.1 wasm32-unknown-unknown
       - name: Browser adapter compile
