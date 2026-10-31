@@ -10,10 +10,10 @@ mod resources;
 use std::{collections::HashSet, fmt, sync::Arc};
 use tilewright_render_resources::ResourceProvider;
 pub use tilewright_render_ui::UiLimits;
-pub use tilewright_render_ui::unicode::{
+pub use tilewright_render_ui::{
     FontBlob, FontPack, TextAffinity, TextCursor, TextLimits, UnicodeLayout, VisualMotion,
 };
-use tilewright_render_ui::unicode::{TextError, TextSystem};
+use tilewright_render_ui::{TextError, TextSystem};
 use tilewright_render_ui::{
     UiDisplayList, UiPaint, UiPrimitive, UiRect, UiTexture, UiViewport, builtin,
 };

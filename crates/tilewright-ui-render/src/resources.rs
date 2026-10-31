@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 use std::sync::Arc;
 use tilewright_render_resources::{Error, ResourceBlob, ResourceProvider, ResourceRequest};
-use tilewright_render_ui::{UiTexture, builtin, unicode::UnicodeTexture};
+use tilewright_render_ui::{UiTexture, UnicodeTexture, builtin};
 #[derive(Clone)]
 pub(crate) struct Resources {
     textures: Vec<UnicodeTexture>,
