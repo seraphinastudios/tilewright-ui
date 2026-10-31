@@ -225,7 +225,6 @@ impl BrowserUi {
     }
     pub fn ack_actions(&mut self, id: &str) -> Result<()> {
         self.app
-            .ui_mut()
             .ack_actions(BatchId::new(number(id)?).map_err(error)?)
             .map_err(error)
     }

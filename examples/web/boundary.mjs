@@ -4,6 +4,7 @@
 // wasm-bindgen converts unpaired UTF-16 surrogates to replacement characters.
 // Refuse them before crossing the boundary, so accepted text is byte-exact.
 export function exactText(value) {
+  if (typeof value !== 'string') throw new TypeError('Expected string');
   for (let i = 0; i < value.length; i += 1) {
     const unit = value.charCodeAt(i);
     if (unit >= 0xd800 && unit <= 0xdbff) {

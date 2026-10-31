@@ -6,7 +6,7 @@ import { exactText, identity, PressOwnership } from './boundary.mjs';
 
 test('text crosses without silent surrogate replacement', () => {
   for (const text of ['hello', 'e\u0301', '👩🏽‍💻', 'مرحبا', 'אבג']) assert.equal(exactText(text), text);
-  for (const text of ['\ud800', '\udfff', 'x\ud800a']) assert.throws(() => exactText(text));
+  for (const text of ['\ud800', '\udfff', 'x\ud800a', null, 12]) assert.throws(() => exactText(text));
 });
 test('identities never round or wrap', () => {
   assert.equal(identity('18446744073709551615'), '18446744073709551615');
