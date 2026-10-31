@@ -16,7 +16,11 @@ fn error(value: impl std::fmt::Display) -> String {
     value.to_string()
 }
 fn number(value: &str) -> Result<u64> {
-    if value.is_empty() || value.starts_with('0') || !value.bytes().all(|c| c.is_ascii_digit()) {
+    if value.len() > 20
+        || value.is_empty()
+        || value.starts_with('0')
+        || !value.bytes().all(|c| c.is_ascii_digit())
+    {
         return Err("InvalidInput".into());
     }
     value.parse().map_err(error)
@@ -32,6 +36,9 @@ fn target(generation: &str, epoch: &str, revision: &str) -> Result<TextTarget> {
     })
 }
 fn stamp(value: &str) -> Result<PresentationStamp> {
+    if value.len() > 256 {
+        return Err("InvalidInput".into());
+    }
     let value: Value = serde_json::from_str(value).map_err(error)?;
     let field = |key| {
         value
@@ -116,6 +123,7 @@ impl BrowserUi {
         Ok(())
     }
     /// `generation`, `epoch`, and `revision` are captured before the native edit.
+    #[allow(clippy::too_many_arguments)]
     pub fn replace(
         &mut self,
         text: &str,
@@ -171,6 +179,7 @@ impl BrowserUi {
         Ok(())
     }
     /// Selection from a native element is still fenced by the displayed commit.
+    #[allow(clippy::too_many_arguments)]
     pub fn select(
         &mut self,
         presentation: &str,
