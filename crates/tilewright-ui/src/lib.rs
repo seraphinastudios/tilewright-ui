@@ -260,7 +260,7 @@ impl Ui {
         self.composition
     }
     /// Retire a host-bound field identity without consuming pending actions.
-    /// Binding requires an unfocused SingleField and advances identities even
+    /// Binding requires an unfocused `SingleField` and advances identities even
     /// when the bytes are unchanged. Late input for the old binding is stale.
     pub fn bind_field(&mut self, text: impl Into<String>) -> Result<(), UiError> {
         if self.composition != Composition::SingleField {
@@ -1025,6 +1025,8 @@ pub fn layout_in(
     embedded_layout(snapshot, viewport, bounds, clip)
 }
 
+// Keep the bounded declarative paint sequence in presenter order.
+#[allow(clippy::too_many_lines)]
 fn embedded_layout(
     snapshot: &UiSnapshot,
     viewport: Viewport,
