@@ -187,6 +187,9 @@ class DomHost {
     const composing=Boolean(this.composition)||event.isComposing||event.keyCode===229;
     const commandEvent=(!inComposer&&event.target!==this.send)||composing?{code:event.code,key:'',repeat:event.repeat,isComposing:composing}:event;
     try {
+      // Native selection defaults (Ctrl+A/arrows) can precede keyup before
+      // selectionchange is delivered; import them before repainting the caret.
+      if(inComposer&&!composing)this.syncSelection();
       const result=browserKey(this.app,commandEvent,pressed);
       if(pressed&&event.key==='Escape'&&this.composition)this.cancelComposition();
       if(pressed&&!event.repeat&&!composing&&result.keyEffects&&event.key!=='Escape')this.awaitFreshEdit=false;
