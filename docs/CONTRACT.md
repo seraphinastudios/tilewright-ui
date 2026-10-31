@@ -81,6 +81,23 @@ press, so subsequent repeats or releases cannot escape to world controls after
 focus changes. Its bounded representation covers the entire admitted key domain;
 ordinary action-queue pressure must not make ownership recording fallible.
 
+`KeyEvent.physical` identifies a physical press independently of its semantic
+`key`. Return and keypad Enter may request the same command but must keep
+different physical identities. Native adapters use scancodes; browser adapters
+map physical `KeyboardEvent.code` values, not text or layout-dependent labels.
+Helpers such as visual caret movement and keyboard clipboard operations run only
+after successful key routing and a positive `can_apply_key_effect(physical)`
+check. `Consumed` alone is insufficient: a quarantined press is also consumed.
+
+`platform_composing` is conservative metadata about that key event. It preserves
+the Enter fence when a platform reports composition without visible preedit
+text, including browser `Process`/229 events and native IME event batches. It is
+not a persistent composition model. Presenters still track their own native
+composition lifecycle and reject submission while it is active. Keyup releases
+only the matching physical key's fence. Explicit active composition cancellation
+advances the control epoch; ordinary empty-preedit completion and text commit do
+not, so a legitimate final commit remains possible.
+
 For future async effects, every request carries context/widget generation, request ID and expected revision. Closing its owner immediately invalidates acceptance independently of worker completion. A full completion inbox returns `QueueFull`; the producer retains the completion for retry or explicitly cancels the request, and the configured outstanding-work budget bounds both. Never silently drop a successful completion or allocate an unbounded retry list. Apply lifecycle/cancellation barriers before queued completions, then process completions in accepted sequence order and ordinary input in host-supplied order. Do not add background workers for this prototype.
 
 ## Prepared geometry is not displayed geometry
@@ -113,6 +130,11 @@ Resize, DPI/host-transform changes, surface loss/recreation and viewport attachm
 Bound retained prepared/in-flight snapshots. A full frame budget yields backpressure or discards only a frame the host guarantees was never submitted; it cannot release resources still used by a displayed/in-flight frame. Retain the displayed snapshot and any referenced atlas/layout resources until a replacement is acknowledged or the surface is explicitly invalidated. Frame resources and widget state have separate lifetimes.
 
 The equivalent DOM boundary is a host-confirmed layout commit: after applying the shared snapshot, update/measure current element bounds, scroll positions, clips and transforms together and acknowledge that exact revision. A pending DOM patch is not current hit geometry. Native element event targets may identify the element directly, but ID/generation/revision checks still apply. Do not claim an animation callback proves literal monitor scanout; the contract is the presenter’s successful commit boundary.
+
+The example DOM presenter retires its native input node and listeners when a
+composition session is explicitly cancelled. Late events for the detached node
+cannot acquire the new node's target identity. Pointer, key or paste activity is
+not evidence that old composition callbacks have drained.
 
 ## Neutral draw and text model
 

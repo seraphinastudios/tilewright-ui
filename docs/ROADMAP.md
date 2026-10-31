@@ -52,10 +52,10 @@ names need not change merely to adopt common widgets.
 
 ## Later decisions
 
-The browser presenter may use native HTML controls or a common GPU appearance;
-its IME and accessibility obligations differ. Native assistive-technology support
-also needs named OS/tool qualification. These choices do not change the shared
-state, action and lifecycle contracts.
+The first browser example uses native HTML controls. A common GPU appearance can
+be added independently; its IME and accessibility obligations differ. Native
+assistive-technology support also needs named OS/tool qualification. These
+choices do not change the shared state, action and lifecycle contracts.
 
 Other follow-ups include docking and saved layouts, richer inspectors, gamepad
 navigation, touch/mobile behavior, themes, virtualized lists and typed rich-text

@@ -22,9 +22,10 @@ this repository does not replace it or its independent releases.
 Read the [architecture](docs/ARCHITECTURE.md), [interaction contract](docs/CONTRACT.md)
 and [adoption roadmap](docs/ROADMAP.md). The [native Rust example](examples/native/README.md)
 and [C/SDL example](examples/c-sdl/README.md) use the same state and renderer
-through different interfaces. The [browser boundary](examples/web/README.md)
-preserves the same semantic model. A successful boundary test is not a claim of
-complete browser UI, OS IME, accessibility or Classic integration support.
+through different interfaces. The [browser example](examples/web/README.md) uses
+native HTML controls over the rendered world and preserves the same semantic
+model. Build and browser tests do not establish OS IME, screen-reader or Classic
+integration support; those capabilities require their own actual host evidence.
 
 Rust 1.97.1 is pinned. The renderer dependency is the independently released
 `0.6.0` family. Before checks, prepare the separately licensed font data outside
