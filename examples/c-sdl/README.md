@@ -14,11 +14,11 @@ cmake -S examples/c-sdl -B /tmp/twui-c \
   -DCMAKE_PREFIX_PATH=/path/to/pinned-sdl3 \
   -DTILEWRIGHT_UI_LIBRARY="$PWD/target/debug/libtilewright_ui_ffi.so"
 cmake --build /tmp/twui-c
-/tmp/twui-c/tilewright-ui-c-sdl --font /path/font.ttf SHA256
+/tmp/twui-c/tilewright-ui-c-sdl --font "Internal Family Name" /path/font.ttf SHA256
 ```
 
 No host packages are installed by this example. Font bytes are caller-supplied;
-SHA256 must come from the trusted font manifest. Multiple `--font PATH SHA256`
+Family names and SHA256 must come from the trusted font manifest. Multiple `--font FAMILY PATH SHA256`
 arguments form a fallback pack. Use only licensed fonts. `--frames N` exits after
 N successful presents on an owned test display.
 
@@ -29,3 +29,7 @@ press identity, cancellation epochs and exact presentation stamps fence input.
 Both hosts composite premultiplied reference pixels over the same authored map
 in integer RGBA, then upload one opaque texture and acknowledge after present.
 This qualifies neither production compositor performance nor OS accessibility.
+
+The host advertises only composition rendering through the checked SDL hint
+before SDL initialization; the OS owns candidate UI. A conflicting environment
+hint is overridden and verified.

@@ -24,6 +24,7 @@ use tilewright_ui_render::{
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 fn main() -> Result<()> {
+    configure_ime()?;
     let (fonts, max_frames) = arguments()?;
     let limits = TextLimits::default();
     let mut renderer = UiRenderer::new(
@@ -107,19 +108,22 @@ fn main() -> Result<()> {
 fn arguments() -> Result<(Vec<FontBlob>, Option<u64>)> {
     let mut args = std::env::args().skip(1);
     let mut fonts = Vec::new();
+    let mut font_bytes = 0;
     let mut max_frames = None;
     while let Some(flag) = args.next() {
         match flag.as_str() {
             "--font" => {
-                let path = args.next().ok_or("--font requires PATH SHA256")?;
-                let hex = args.next().ok_or("--font requires PATH SHA256")?;
+                let family = args.next().ok_or("--font requires FAMILY PATH SHA256")?;
+                let path = args.next().ok_or("--font requires FAMILY PATH SHA256")?;
+                let hex = args.next().ok_or("--font requires FAMILY PATH SHA256")?;
                 let mut bytes = Vec::new();
                 std::fs::File::open(&path)?.take(32 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
-                if bytes.len() > 32 * 1024 * 1024 || fonts.len() >= 32 { return Err("font budget exceeded".into()); }
-                fonts.push(FontBlob { family: format!("explicit-{}", fonts.len()), bytes: Arc::from(bytes), sha256: digest(&hex)? });
+                font_bytes += bytes.len();
+                if bytes.len() > 32 * 1024 * 1024 || font_bytes > 64 * 1024 * 1024 || fonts.len() >= 32 { return Err("font budget exceeded".into()); }
+                fonts.push(FontBlob { family, bytes: Arc::from(bytes), sha256: digest(&hex)? });
             }
             "--frames" => max_frames = Some(args.next().ok_or("missing frame count")?.parse::<u64>()?),
-            _ => return Err("usage: tilewright-ui-native-demo --font PATH SHA256 [--font PATH SHA256] [--frames N]".into()),
+            _ => return Err("usage: tilewright-ui-native-demo --font FAMILY PATH SHA256 [--font FAMILY PATH SHA256] [--frames N]".into()),
         }
     }
     Ok((fonts, max_frames))
@@ -316,4 +320,47 @@ fn digest(hex: &str) -> Result<[u8; 32]> {
         *byte = u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16)?;
     }
     Ok(result)
+}
+
+// Adapted from the MIT editor checked capability setup (see PROVENANCE.md).
+// Advertise our composition rendering, while candidate UI remains OS-owned.
+fn configure_ime() -> Result<()> {
+    let hint = sdl3::hint::names::IME_IMPLEMENTED_UI;
+    if !sdl3::hint::set_with_priority(hint, "composition", &sdl3::hint::Hint::Override)
+        || sdl3::hint::get(hint).as_deref() != Some("composition")
+    {
+        return Err("SDL did not retain the composition UI capability".into());
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod capability_tests {
+    #[test]
+    fn composition_capability_overrides_conflicting_environment() {
+        const CHILD: &str = "TWUI_IME_HINT_TEST_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            super::configure_ime().unwrap();
+            assert_eq!(
+                sdl3::hint::get(sdl3::hint::names::IME_IMPLEMENTED_UI).as_deref(),
+                Some("composition")
+            );
+            return;
+        }
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "capability_tests::composition_capability_overrides_conflicting_environment",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("SDL_IME_IMPLEMENTED_UI", "candidates")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stdout).contains("1 passed"));
+    }
 }

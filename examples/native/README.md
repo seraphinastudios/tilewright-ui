@@ -6,10 +6,10 @@ composition, focus/modal state, key ownership and actions. Shared renderer 0.6
 shapes and paints the overlay through its CPU reference path. This is a bounded
 CPU demonstration, not GPU performance or Classic integration acceptance.
 
-Supply one or more explicitly licensed fonts and their trusted manifest digests:
+Supply each font’s exact internal family name, explicitly licensed file, and trusted manifest digest:
 
 ```sh
-cargo run -p tilewright-ui-native-demo -- --font /path/font.ttf SHA256
+cargo run -p tilewright-ui-native-demo -- --font "Internal Family Name" /path/font.ttf SHA256
 ```
 
 There is no system-font discovery, download or digest inference. `--frames N`
@@ -26,3 +26,7 @@ successful SDL presentation; resize and surface events invalidate it first.
 
 Native accessibility and OS IME/candidate-window behavior require actual host
 qualification. A compile or injected-event check does not establish those.
+
+The host advertises only composition rendering through the checked SDL hint
+before SDL initialization; the OS owns candidate UI. A conflicting environment
+hint is overridden and verified.

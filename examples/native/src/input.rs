@@ -7,7 +7,7 @@ use sdl3::{
     mouse::MouseButton,
 };
 use tilewright_app::App;
-use tilewright_ui::{COMPOSER, Input, Key, KeyEvent, SUBMIT, WORLD};
+use tilewright_ui::{COMPOSER, HISTORY, Input, Key, KeyEvent, SUBMIT, WORLD};
 
 #[derive(Default)]
 pub struct HostInput {
@@ -177,9 +177,18 @@ impl HostInput {
                 }
             }
             Event::MouseWheel {
-                window_id: id, y, ..
+                window_id: id,
+                y,
+                mouse_x,
+                mouse_y,
+                ..
             } if *id == window_id => {
-                app.apply(Input::Scroll(*y as i32))?;
+                if let Some(stamp) = app.displayed().map(|frame| frame.stamp)
+                    && let Ok(Some(widget)) = app.hit_test(stamp, *mouse_x, *mouse_y)
+                    && widget.id == HISTORY
+                {
+                    app.apply(Input::Scroll(*y as i32))?;
+                }
             }
             _ => (),
         }
@@ -313,5 +322,47 @@ mod tests {
         )
         .unwrap();
         assert!(host.world_held.is_empty());
+    }
+    #[test]
+    fn panel_background_is_not_a_world_click_and_wheel_uses_history_target() {
+        let mut app = App::new(Limits::default()).unwrap();
+        app.apply(Input::Focus(Some(COMPOSER))).unwrap();
+        for message in ["one", "two", "three"] {
+            app.apply(Input::ReceiveMessage(message.into())).unwrap();
+        }
+        let frame = app
+            .prepare(tilewright_ui::Viewport::new(800.0, 600.0, 1.0).unwrap())
+            .unwrap();
+        app.ack_presented(frame.stamp).unwrap();
+        let mut host = HostInput::default();
+        host.synchronize(&app, 0);
+        let click = Event::MouseButtonDown {
+            timestamp: 1,
+            window_id: 1,
+            which: 0,
+            mouse_btn: MouseButton::Left,
+            clicks: 1,
+            x: 10.0,
+            y: 350.0,
+        };
+        host.event(&mut app, &click, 1).unwrap();
+        assert!(app.ui().text_target().is_some());
+        assert!(host.world_held.is_empty());
+        let wheel = |mouse_y| Event::MouseWheel {
+            timestamp: 2,
+            window_id: 1,
+            which: 0,
+            x: 0.0,
+            y: 1.0,
+            direction: sdl3::mouse::MouseWheelDirection::Normal,
+            mouse_x: 10.0,
+            mouse_y,
+            integer_x: 0,
+            integer_y: 1,
+        };
+        host.event(&mut app, &wheel(100.0), 1).unwrap();
+        assert_eq!(app.ui().snapshot().scroll, 0);
+        host.event(&mut app, &wheel(350.0), 1).unwrap();
+        assert_eq!(app.ui().snapshot().scroll, 1);
     }
 }

@@ -149,7 +149,14 @@ static bool event(struct host *host, SDL_Event *event) {
             }
         } break;
     case SDL_EVENT_MOUSE_WHEEL:
-        if (event->wheel.windowID == own) (void)apply(host, (twui_input){ .kind = TWUI_SCROLL, .delta = (int32_t)event->wheel.y });
+        if (event->wheel.windowID == own) {
+            twui_stamp stamp = { .struct_size = sizeof(stamp) }; uint32_t consumed = 1;
+            if (twui_get_displayed(host->ui, &stamp) == TWUI_OK) {
+                twui_status status = twui_scroll_at(host->ui, &stamp, event->wheel.mouse_x, event->wheel.mouse_y, (int32_t)event->wheel.y, &consumed);
+                if (status != TWUI_OK && status != TWUI_STALE) check(status, "scroll");
+                sync_control(host);
+            }
+        }
         break;
     default: break;
     }
@@ -172,26 +179,35 @@ static uint8_t nibble(char c) {
     if (c >= 'A' && c <= 'F') return (uint8_t)(c - 'A' + 10);
     fputs("invalid SHA256\n", stderr); exit(EXIT_FAILURE);
 }
+static void configure_ime(void) {
+    /* Composition rendering is provided here; candidate UI stays OS-owned. */
+    sdl_check(SDL_SetHintWithPriority(SDL_HINT_IME_IMPLEMENTED_UI, "composition", SDL_HINT_OVERRIDE), "IME capability");
+    const char *hint = SDL_GetHint(SDL_HINT_IME_IMPLEMENTED_UI);
+    if (!hint || strcmp(hint, "composition") != 0) { fputs("IME capability was not retained\n", stderr); exit(EXIT_FAILURE); }
+}
 int main(int argc, char **argv) {
-    twui_font fonts[MAX_FONTS] = {{0}}; uint8_t *font_bytes[MAX_FONTS] = {0}; uint32_t font_count = 0;
+    configure_ime();
+    if (argc == 2 && strcmp(argv[1], "--check-ime") == 0) { puts("ime_ui=composition"); return EXIT_SUCCESS; }
+    twui_font fonts[MAX_FONTS] = {{0}}; uint8_t *font_bytes[MAX_FONTS] = {0}; uint32_t font_count = 0; uint64_t total_font_bytes = 0;
     uint64_t max_frames = 0;
     for (int arg = 1; arg < argc; ++arg) {
-        if (strcmp(argv[arg], "--font") == 0 && arg + 2 < argc && font_count < MAX_FONTS) {
-            const char *path = argv[++arg], *hex = argv[++arg];
+        if (strcmp(argv[arg], "--font") == 0 && arg + 3 < argc && font_count < MAX_FONTS) {
+            const char *family = argv[++arg], *path = argv[++arg], *hex = argv[++arg];
             if (strlen(hex) != 64) { fputs("SHA256 must contain 64 hex digits\n", stderr); return EXIT_FAILURE; }
             FILE *file = fopen(path, "rb"); if (!file) { perror(path); return EXIT_FAILURE; }
             if (fseek(file, 0, SEEK_END) != 0) return EXIT_FAILURE;
             long length = ftell(file); if (length <= 0 || (unsigned long)length > FONT_LIMIT) return EXIT_FAILURE;
+            total_font_bytes += (uint64_t)length; if (total_font_bytes > 64U * 1024U * 1024U) return EXIT_FAILURE;
             rewind(file); uint8_t *bytes = malloc((size_t)length); if (!bytes) return EXIT_FAILURE;
             if (fread(bytes, 1, (size_t)length, file) != (size_t)length || fclose(file) != 0) return EXIT_FAILURE;
             twui_font *font = &fonts[font_count];
-            font->struct_size = sizeof(*font); font->family = (const uint8_t *)path; font->family_bytes = strlen(path);
+            font->struct_size = sizeof(*font); font->family = (const uint8_t *)family; font->family_bytes = strlen(family);
             font->bytes = bytes; font->byte_length = (uint64_t)length;
             for (size_t index = 0; index < 32; ++index) font->sha256[index] = (uint8_t)((nibble(hex[index * 2]) << 4) | nibble(hex[index * 2 + 1]));
             font_bytes[font_count++] = bytes;
         } else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
             char *end = NULL; max_frames = strtoull(argv[++arg], &end, 10); if (!end || *end != 0 || max_frames == 0) return EXIT_FAILURE;
-        } else { fputs("usage: tilewright-ui-c-sdl --font PATH SHA256 [--font PATH SHA256] [--frames N]\n", stderr); return EXIT_FAILURE; }
+        } else { fputs("usage: tilewright-ui-c-sdl --font FAMILY PATH SHA256 [--font FAMILY PATH SHA256] [--frames N]\n", stderr); return EXIT_FAILURE; }
     }
     if (font_count == 0) { fputs("explicit verified fonts required\n", stderr); return EXIT_FAILURE; }
     sdl_check(SDL_Init(SDL_INIT_VIDEO), "init");
