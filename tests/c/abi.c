@@ -71,6 +71,16 @@ int main(void) {
     cfg.struct_size = sizeof cfg;
     cfg.queued_batches = 1; cfg.prepared_frames = 2;
     assert(twui_create(&cfg, &ctx) == TWUI_OK && ctx != NULL);
+#ifdef TWUI_CPU_PROTOTYPE
+    assert(twui_set_fonts(ctx, NULL, 0) == TWUI_INVALID_ARGUMENT);
+    twui_font font = {0}; font.struct_size = sizeof font;
+    assert(twui_set_fonts(ctx, &font, 1) == TWUI_INVALID_ARGUMENT);
+    twui_image no_font_image = {0}; no_font_image.struct_size = sizeof no_font_image;
+    twui_viewport no_font_vp = {0}; no_font_vp.struct_size = sizeof no_font_vp;
+    no_font_vp.width = 800; no_font_vp.height = 600; no_font_vp.scale = 1;
+    assert(twui_render_prepare(ctx, &no_font_vp, &no_font_image) == TWUI_INVALID_ARGUMENT);
+#endif
+
     thrd_t other;
     assert(thrd_create(&other, wrong_thread, ctx) == thrd_success);
     assert(thrd_join(other, NULL) == thrd_success);

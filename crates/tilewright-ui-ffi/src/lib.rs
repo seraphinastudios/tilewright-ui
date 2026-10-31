@@ -736,9 +736,16 @@ pub unsafe extern "C" fn twui_pointer(
             if consumed.is_null() || !x.is_finite() || !y.is_finite() {
                 return Err(INVALID_ARGUMENT);
             }
-            let hit = app
-                .hit_test(stamp_from_c(read_sized(stamp)?)?, x, y)
-                .map_err(app_error)?;
+            let stamp = stamp_from_c(read_sized(stamp)?)?;
+            let hit = app.hit_test(stamp, x, y).map_err(app_error)?;
+            #[cfg(feature = "cpu-prototype")]
+            if hit.is_some_and(|widget| widget.id == tilewright_ui::COMPOSER)
+                && app.ui().text_target().is_some()
+                && render::select_at(app, stamp, x, y)?
+            {
+                consumed.write(1);
+                return Ok(());
+            }
             let value = match hit.map(|v| v.id) {
                 Some(tilewright_ui::COMPOSER) => disposition(
                     app.apply(tilewright_ui::Input::Focus(Some(tilewright_ui::COMPOSER)))

@@ -241,3 +241,82 @@ pub unsafe extern "C" fn twui_get_ime_rect(
         })
     }
 }
+
+pub(super) fn select_at(
+    engine: &mut Engine,
+    stamp: tilewright_app::PresentationStamp,
+    x: f32,
+    y: f32,
+) -> Result<bool> {
+    let Some(frame) = engine.frames.iter().find(|frame| frame.stamp == stamp) else {
+        return Ok(false);
+    };
+    let Some(text) = frame.compiled.editable() else {
+        return Ok(false);
+    };
+    let Some(cursor) = text.hit([x, y]) else {
+        return Ok(false);
+    };
+    let cursor = text
+        .snapshot
+        .as_ref()
+        .ok_or(STALE)?
+        .committed_cursor(cursor)
+        .map_err(ui_error)?;
+    let target = engine.ui().text_target().ok_or(STALE)?;
+    engine
+        .select_text(stamp, target, tilewright_ui::TextSelection::caret(cursor))
+        .map_err(app_error)?;
+    Ok(true)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twui_move_visual(
+    context: *mut Context,
+    stamp: *const Stamp,
+    motion: u32,
+    extend: u32,
+) -> u32 {
+    // SAFETY: all foreign pointers obey the public ABI contract.
+    unsafe {
+        with_context(context, |engine| {
+            use tilewright_ui_render::VisualMotion;
+            let motion = match motion {
+                1 => VisualMotion::Left,
+                2 => VisualMotion::Right,
+                3 => VisualMotion::Home,
+                4 => VisualMotion::End,
+                _ => return Err(INVALID_ARGUMENT),
+            };
+            if extend > 1 {
+                return Err(INVALID_ARGUMENT);
+            }
+            let stamp = stamp_from_c(read_sized(stamp)?)?;
+            engine.app.validate_displayed(stamp).map_err(app_error)?;
+            let target = engine.ui().text_target().ok_or(STALE)?;
+            let frame = engine
+                .frames
+                .iter()
+                .find(|frame| frame.stamp == stamp)
+                .ok_or(STALE)?;
+            let text = frame.compiled.editable().ok_or(STALE)?;
+            let snapshot = text.snapshot.as_ref().ok_or(STALE)?;
+            if snapshot.composition.is_some() {
+                return Err(STALE);
+            }
+            let cursor = text.move_visual(snapshot.selection.focus, motion);
+            let selection = tilewright_ui::TextSelection {
+                anchor: if extend == 1 {
+                    snapshot.selection.anchor
+                } else {
+                    cursor
+                },
+                focus: cursor,
+            };
+            engine
+                .select_text(stamp, target, selection)
+                .map_err(app_error)?;
+            Ok(())
+        })
+    }
+}

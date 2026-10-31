@@ -182,6 +182,9 @@ twui_status twui_copy_rgba(twui_context *context, const twui_stamp *stamp,
  * stamp. Rectangle is in logical coordinates; host applies its screen transform.
  */
 twui_status twui_get_ime_rect(twui_context *context, const twui_stamp *stamp, twui_rect *out_rect);
+/* Uses the exact displayed shaped layout. motion: 1 left, 2 right, 3 home,
+ * 4 end. extend is 0/1. Composition must be committed/cancelled first. */
+twui_status twui_move_visual(twui_context *context, const twui_stamp *stamp, uint32_t motion, uint32_t extend);
 #endif
 
 #ifdef __cplusplus
