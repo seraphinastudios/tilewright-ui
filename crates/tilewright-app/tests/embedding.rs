@@ -144,3 +144,32 @@ fn field_action_can_be_drained_without_invalidating_unchanged_presentation() {
     app.bind_field("value").unwrap();
     assert!(app.validate_displayed(frame.stamp).is_err());
 }
+
+#[test]
+fn changed_raw_clip_retires_geometry_even_if_effective_clip_is_identical() {
+    let mut app = app();
+    let wide_clip = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    app.set_layout(viewport(), bounds(), wide_clip).unwrap();
+    let frame = app.prepare_current().unwrap();
+    app.ack_presented(frame.stamp).unwrap();
+    let epoch = app.ui().control().epoch;
+    app.set_layout(viewport(), bounds(), bounds()).unwrap();
+    assert!(app.surface_epoch() > frame.stamp.surface);
+    assert!(app.ui().control().epoch > epoch);
+    assert!(app.displayed().is_none());
+    let replacement = app.prepare_current().unwrap();
+    assert_eq!(replacement.layout.paint, frame.layout.paint);
+    assert_eq!(replacement.layout.hits, frame.layout.hits);
+    assert_eq!(
+        replacement.layout.composer_bounds,
+        frame.layout.composer_bounds
+    );
+    let surface = app.surface_epoch();
+    app.set_layout(viewport(), bounds(), bounds()).unwrap();
+    assert_eq!(app.surface_epoch(), surface);
+}

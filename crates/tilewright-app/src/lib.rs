@@ -112,7 +112,7 @@ impl App {
         bounds: Rect,
         clip: Rect,
     ) -> Result<(), AppError> {
-        let clip = tilewright_ui::validate_layout(viewport, bounds, clip)?;
+        tilewright_ui::validate_layout(viewport, bounds, clip)?;
         let attachment = Attachment {
             viewport,
             bounds,
