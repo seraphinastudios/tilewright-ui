@@ -5,6 +5,7 @@ members = [
   "crates/tilewright-ui-render",
   "crates/tilewright-ui-ffi",
   "adapters/web",
+  "examples/native",
 ]
 resolver = "3"
 
