@@ -16,3 +16,8 @@ trap 'rm -rf "$output"' EXIT
   tests/c/abi.c "${CARGO_TARGET_DIR:-target}/debug/libtilewright_ui_ffi.a" \
   -o "$output/c-abi" -ldl -lpthread -lm
 "$output/c-abi"
+
+"${CC:-cc}" -std=c17 -Wall -Wextra -Werror -pedantic "${cflags[@]}" -Iinclude \
+  crates/tilewright-ui-ffi/tests/embedded.c "${CARGO_TARGET_DIR:-target}/debug/libtilewright_ui_ffi.a" \
+  -o "$output/c-embedded" -ldl -lpthread -lm
+"$output/c-embedded"

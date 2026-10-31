@@ -81,9 +81,25 @@ impl Default for Limits {
         }
     }
 }
+/// Immutable selection of the widgets owned by one context.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Composition {
+    #[default]
+    Demo,
+    ChatPanel,
+    SingleField,
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
-    SubmitChat { text: String },
+    SubmitChat {
+        text: String,
+    },
+    /// A retained field draft. The host owns mapping this identity to its domain.
+    SubmitField {
+        widget: WidgetRef,
+        revision: TextRevision,
+        text: String,
+    },
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActionBatch {
@@ -171,6 +187,7 @@ pub enum Input {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiSnapshot {
+    pub composition: Composition,
     pub revision: UiRevision,
     pub composer_widget: WidgetRef,
     pub composer_visible: bool,
@@ -181,6 +198,7 @@ pub struct UiSnapshot {
 }
 #[derive(Clone, Debug)]
 pub struct Ui {
+    composition: Composition,
     limits: Limits,
     revision: UiRevision,
     composer: TextInput,
@@ -198,6 +216,9 @@ pub struct Ui {
 }
 impl Ui {
     pub fn new(limits: Limits) -> Result<Self, UiError> {
+        Self::with_composition(limits, Composition::Demo)
+    }
+    pub fn with_composition(limits: Limits, composition: Composition) -> Result<Self, UiError> {
         if [
             limits.message_bytes,
             limits.history_messages,
@@ -212,6 +233,7 @@ impl Ui {
             return Err(UiError::InvalidInput);
         }
         Ok(Self {
+            composition,
             limits,
             revision: UiRevision(1),
             composer: TextInput::new(String::new(), limits.composer_bytes)?,
@@ -233,6 +255,31 @@ impl Ui {
             window_focused: true,
             keys: KeyLedger::new(),
         })
+    }
+    pub fn composition(&self) -> Composition {
+        self.composition
+    }
+    /// Retire a host-bound field identity without consuming pending actions.
+    /// Binding advances identities even when the bytes are unchanged, clears
+    /// focus and preedit, and makes late input for the old binding stale.
+    pub fn bind_field(&mut self, text: impl Into<String>) -> Result<(), UiError> {
+        if self.composition != Composition::SingleField {
+            return Err(UiError::InvalidInput);
+        }
+        let mut composer = self.composer.clone();
+        composer.bind(text.into())?;
+        let generation = self.generation.next()?;
+        let revision = self.revision.next()?;
+        let epoch = self.control.epoch.next()?;
+        self.composer = composer;
+        self.generation = generation;
+        self.revision = revision;
+        self.control.epoch = epoch;
+        self.control.focused_widget = None;
+        self.control.world_input_allowed =
+            self.window_focused && !self.control.suspended && !self.control.modal_open;
+        self.keys.cancel();
+        Ok(())
     }
     pub fn limits(&self) -> Limits {
         self.limits
@@ -269,6 +316,7 @@ impl Ui {
     }
     pub fn snapshot(&self) -> UiSnapshot {
         UiSnapshot {
+            composition: self.composition,
             revision: self.revision,
             composer_widget: self.composer_widget(),
             composer_visible: self.composer_visible,
@@ -352,10 +400,12 @@ impl Ui {
         if self.composer.is_composing() || self.keys.enter_fenced() {
             return Ok(());
         }
-        if self.composer.text().is_empty() {
+        if self.composition != Composition::SingleField && self.composer.text().is_empty() {
             return Ok(());
         }
-        if self.composer.text().len() > self.limits.message_bytes {
+        if self.composition != Composition::SingleField
+            && self.composer.text().len() > self.limits.message_bytes
+        {
             return Err(UiError::LimitExceeded);
         }
         if self.queue.len() == self.limits.queued_batches {
@@ -363,11 +413,20 @@ impl Ui {
         }
         let following = self.next_batch.next()?;
         let text = self.composer.text().to_owned();
-        self.composer.select_all()?;
-        self.composer.input("")?;
+        let action = if self.composition == Composition::SingleField {
+            Action::SubmitField {
+                widget: self.composer_widget(),
+                revision: self.composer.revision(),
+                text,
+            }
+        } else {
+            self.composer.select_all()?;
+            self.composer.input("")?;
+            Action::SubmitChat { text }
+        };
         self.queue.push_back(ActionBatch {
             id: self.next_batch,
-            actions: vec![Action::SubmitChat { text }],
+            actions: vec![action],
         });
         self.next_batch = following;
         Ok(())
@@ -383,7 +442,11 @@ impl Ui {
                 changed = true;
             }
             Input::Focus(focus) => {
-                if focus.is_some_and(|id| id != COMPOSER && id != SUBMIT && id != MODAL) {
+                if focus.is_some_and(|id| {
+                    id != COMPOSER
+                        && id != SUBMIT
+                        && (id != MODAL || self.composition != Composition::Demo)
+                }) {
                     return Err(UiError::InvalidInput);
                 }
                 if focus.is_some_and(|id| id == COMPOSER || id == SUBMIT)
@@ -567,6 +630,9 @@ impl Ui {
                 }
             }
             Input::ReceiveMessage(text) => {
+                if self.composition == Composition::SingleField {
+                    return Err(UiError::InvalidInput);
+                }
                 if text.len() > self.limits.message_bytes || text.chars().any(char::is_control) {
                     return Err(UiError::LimitExceeded);
                 }
@@ -583,6 +649,9 @@ impl Ui {
                 changed = true;
             }
             Input::Scroll(delta) => {
+                if self.composition == Composition::SingleField {
+                    return Err(UiError::InvalidInput);
+                }
                 let scroll = self
                     .scroll
                     .saturating_add_signed(delta as isize)
@@ -632,6 +701,38 @@ pub struct Rect {
     pub height: f32,
 }
 impl Rect {
+    /// Validate coordinates, nonnegative extents, and finite endpoints.
+    pub fn validate(self) -> Result<Self, UiError> {
+        if [
+            self.x,
+            self.y,
+            self.width,
+            self.height,
+            self.x + self.width,
+            self.y + self.height,
+        ]
+        .iter()
+        .any(|value| !value.is_finite())
+            || self.width < 0.0
+            || self.height < 0.0
+        {
+            Err(UiError::InvalidInput)
+        } else {
+            Ok(self)
+        }
+    }
+    pub fn intersection(self, other: Self) -> Result<Self, UiError> {
+        self.validate()?;
+        other.validate()?;
+        let x = self.x.max(other.x);
+        let y = self.y.max(other.y);
+        Ok(Self {
+            x,
+            y,
+            width: ((self.x + self.width).min(other.x + other.width) - x).max(0.0),
+            height: ((self.y + self.height).min(other.y + other.height) - y).max(0.0),
+        })
+    }
     pub fn contains(self, x: f32, y: f32) -> bool {
         x.is_finite()
             && y.is_finite()
@@ -685,7 +786,7 @@ pub struct Layout {
 /// The single neutral layout used by all presenters. Text is unshaped.
 // This declarative bounded prototype layout is intentionally kept in paint order.
 #[allow(clippy::too_many_lines)]
-pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiError> {
+fn demo_layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiError> {
     let viewport = viewport.validate()?;
     let full = Rect {
         x: 0.0,
@@ -840,4 +941,250 @@ pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiErr
         hits,
         composer_bounds: snapshot.composer_visible.then_some(composer),
     })
+}
+
+/// Validate a host attachment and return its effective clip. Bounds must lie
+/// inside the viewport; the clip may extend beyond them and is intersected.
+pub fn validate_layout(viewport: Viewport, bounds: Rect, clip: Rect) -> Result<Rect, UiError> {
+    viewport.validate()?;
+    bounds.validate()?;
+    clip.validate()?;
+    if bounds.x < 0.0
+        || bounds.y < 0.0
+        || bounds.x + bounds.width > viewport.width
+        || bounds.y + bounds.height > viewport.height
+    {
+        return Err(UiError::InvalidInput);
+    }
+    bounds.intersection(clip)
+}
+
+/// The legacy full-viewport convenience layout.
+pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiError> {
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: viewport.width,
+        height: viewport.height,
+    };
+    layout_in(snapshot, viewport, full, full)
+}
+
+/// Layout in host logical coordinates, with every paint and hit clipped to the
+/// attachment. Embedded modes never describe a world viewport or host overlay.
+pub fn layout_in(
+    snapshot: &UiSnapshot,
+    viewport: Viewport,
+    bounds: Rect,
+    clip: Rect,
+) -> Result<Layout, UiError> {
+    let clip = validate_layout(viewport, bounds, clip)?;
+    if bounds.width == 0.0 || bounds.height == 0.0 {
+        return Ok(Layout {
+            ui_revision: snapshot.revision,
+            viewport,
+            paint: Vec::new(),
+            hits: Vec::new(),
+            composer_bounds: None,
+        });
+    }
+    if snapshot.composition == Composition::Demo {
+        let mut layout = demo_layout(
+            snapshot,
+            Viewport {
+                width: bounds.width,
+                height: bounds.height,
+                scale: viewport.scale,
+            },
+        )?;
+        let translate = |rect: &mut Rect| {
+            rect.x += bounds.x;
+            rect.y += bounds.y;
+        };
+        for paint in &mut layout.paint {
+            let (paint_bounds, paint_clip) = match paint {
+                Paint::Rectangle { bounds, clip, .. }
+                | Paint::Text { bounds, clip, .. }
+                | Paint::World { bounds, clip } => (bounds, clip),
+            };
+            translate(paint_bounds);
+            translate(paint_clip);
+            *paint_clip = paint_clip.intersection(clip)?;
+        }
+        for hit in &mut layout.hits {
+            translate(&mut hit.bounds);
+            translate(&mut hit.clip);
+            hit.clip = hit.clip.intersection(clip)?;
+        }
+        if let Some(composer) = &mut layout.composer_bounds {
+            translate(composer);
+        }
+        layout.viewport = viewport;
+        return Ok(layout);
+    }
+    embedded_layout(snapshot, viewport, bounds, clip)
+}
+
+// Keep the bounded declarative paint sequence in presenter order.
+#[allow(clippy::too_many_lines)]
+fn embedded_layout(
+    snapshot: &UiSnapshot,
+    viewport: Viewport,
+    bounds: Rect,
+    clip: Rect,
+) -> Result<Layout, UiError> {
+    let singleton = |id| WidgetRef {
+        id,
+        generation: WidgetGeneration(1),
+    };
+    let inset = 8.0_f32.min(bounds.width / 2.0).min(bounds.height / 2.0);
+    let inner_width = (bounds.width - inset * 2.0).max(0.0);
+    let inner_height = (bounds.height - inset * 2.0).max(0.0);
+    let height = 36.0_f32.min(inner_height);
+    let button_width = 80.0_f32.min(inner_width);
+    let gap = 8.0_f32.min((inner_width - button_width).max(0.0));
+    let composer = Rect {
+        x: bounds.x + inset,
+        y: bounds.y + bounds.height - inset - height,
+        width: (inner_width - button_width - gap).max(0.0),
+        height,
+    };
+    let submit = Rect {
+        x: composer.x + composer.width + gap,
+        width: button_width,
+        ..composer
+    };
+    let mut paint = Vec::new();
+    let mut hits = Vec::new();
+    if snapshot.composition == Composition::ChatPanel {
+        paint.push(Paint::Rectangle {
+            bounds,
+            clip,
+            color: [0.08, 0.09, 0.12, 0.95],
+        });
+        let history = Rect {
+            height: (composer.y - bounds.y - inset).max(0.0),
+            ..bounds
+        };
+        let history_clip = history.intersection(clip)?;
+        hits.push(HitRegion {
+            widget: singleton(HISTORY),
+            bounds: history,
+            clip: history_clip,
+        });
+        let mut y = composer.y - 26.0;
+        for text in snapshot
+            .messages
+            .iter()
+            .rev()
+            .skip(snapshot.scroll)
+            .take(64)
+        {
+            if y < bounds.y {
+                break;
+            }
+            paint.push(Paint::Text {
+                widget: singleton(HISTORY),
+                bounds: Rect {
+                    x: bounds.x + inset,
+                    y,
+                    width: inner_width,
+                    height: 22.0,
+                },
+                clip: history_clip,
+                text: text.clone(),
+                font: FontRole::Body,
+                color: [0.9, 0.9, 0.95, 1.0],
+                text_revision: None,
+            });
+            y -= 22.0;
+        }
+    }
+    if snapshot.composer_visible {
+        paint.push(Paint::Rectangle {
+            bounds: composer,
+            clip,
+            color: [0.18, 0.2, 0.25, 1.0],
+        });
+        paint.push(Paint::Text {
+            widget: snapshot.composer_widget,
+            bounds: composer,
+            clip: composer.intersection(clip)?,
+            text: snapshot.composer.display_text.clone(),
+            font: FontRole::Composer,
+            color: [1.0; 4],
+            text_revision: Some(snapshot.composer.revision),
+        });
+        paint.push(Paint::Rectangle {
+            bounds: submit,
+            clip,
+            color: [0.2, 0.35, 0.6, 1.0],
+        });
+        paint.push(Paint::Text {
+            widget: singleton(SUBMIT),
+            bounds: submit,
+            clip: submit.intersection(clip)?,
+            text: if snapshot.composition == Composition::SingleField {
+                "Apply"
+            } else {
+                "Send"
+            }
+            .into(),
+            font: FontRole::Button,
+            color: [1.0; 4],
+            text_revision: None,
+        });
+        hits.push(HitRegion {
+            widget: snapshot.composer_widget,
+            bounds: composer,
+            clip,
+        });
+        hits.push(HitRegion {
+            widget: singleton(SUBMIT),
+            bounds: submit,
+            clip,
+        });
+    }
+    if snapshot.control.modal_open {
+        hits.clear();
+    }
+    Ok(Layout {
+        ui_revision: snapshot.revision,
+        viewport,
+        paint,
+        hits,
+        composer_bounds: snapshot.composer_visible.then_some(composer),
+    })
+}
+
+#[cfg(test)]
+mod embedding_identity_tests {
+    use super::*;
+
+    #[test]
+    fn binding_exhaustion_never_replaces_text_or_reuses_identities() {
+        for exhausted in 0..4 {
+            let mut ui = Ui::with_composition(Limits::default(), Composition::SingleField).unwrap();
+            ui.bind_field("before").unwrap();
+            match exhausted {
+                0 => ui.generation = WidgetGeneration(u64::MAX),
+                1 => ui.revision = UiRevision(u64::MAX),
+                2 => ui.control.epoch = ControlEpoch(u64::MAX),
+                _ => {
+                    // TextInput cannot have its private revision overwritten here;
+                    // advancing other identities still must precede all commits.
+                    ui.next_batch = BatchId(u64::MAX);
+                    ui.apply(Input::Focus(Some(COMPOSER))).unwrap();
+                    let before = ui.snapshot();
+                    assert_eq!(ui.apply(Input::Activate(SUBMIT)), Err(UiError::Exhausted));
+                    assert_eq!(ui.snapshot(), before);
+                    assert!(ui.peek_actions().is_none());
+                    continue;
+                }
+            }
+            let before = ui.snapshot();
+            assert_eq!(ui.bind_field("after"), Err(UiError::Exhausted));
+            assert_eq!(ui.snapshot(), before);
+        }
+    }
 }

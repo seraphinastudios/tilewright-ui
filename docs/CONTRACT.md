@@ -152,6 +152,43 @@ The host owns the SDL window and event loop. Calls occur on the owning thread; r
 
 The C facade preserves peek/ack output and control-epoch semantics. Copying output into a caller buffer must not dequeue it; `BufferTooSmall` preserves it. Frame/geometry stamps cross the boundary intact. The small C host proves linkage and real event/render behavior, while integration with an existing application's compositor is a separate acceptance step.
 
+## Embedded panels and field binding
+
+Each context has an immutable `Composition`: `Demo`, `ChatPanel`, or
+`SingleField`. Existing constructors retain `Demo`. Embedded contexts contain
+one editable slot; hosts use separate contexts for independently bound fields.
+`ChatPanel` draws history, composer and Send. `SingleField` draws the value and
+Apply, while the host owns its caption, validation and review interface. Neither
+embedded mode emits a world hit or paints a modal over host windows. The host
+still arbitrates events outside the panel and other focused controls.
+
+Call `set_layout` with the host viewport, panel bounds and clip before preparing
+an embedded frame. A changed supplied attachment invalidates old displayed
+geometry immediately, including a clip change with an identical effective
+intersection. Invalid geometry leaves state unchanged. `prepare_current`
+captures the configured attachment; acknowledge it only after the host's whole
+frame is successfully presented. External screen-transform changes require
+explicit invalidation even if local coordinates remain equal.
+
+`bind_field` atomically loads a bounded value while focused or unfocused. It
+changes widget generation, retires focus/preedit and advances cancellation
+identity, while retaining pending immutable actions. Rebinding identical text
+also changes generation. Invalid text or exhausted identities leave the old
+binding untouched. The host maps the returned widget identity to its document,
+property and captured source revision.
+
+`SubmitField` accepts an empty value and retains the exact draft and selection.
+Its action carries widget generation and source text revision. Acknowledging the
+action transfers responsibility to the host's bounded review processing; the
+host separately decides validation and document commit. Late review results
+must not replace a newly edited or rebound value. Consumers inspect actions
+after input even when no visual revision changed.
+
+The C facade adds opt-in functions and sized structs while retaining ABI 2 and
+the existing layouts. A legacy-created Demo context continues to emit only
+chat actions. New field actions expose their binding identity through
+`twui_get_field_action`. See the installed header for exact buffer ownership.
+
 ## Required regression cases
 
 - Fill the action queue; submit with Enter and button; verify unchanged composer/revision, repeat peek, one acknowledgment, and exactly one accepted retry.

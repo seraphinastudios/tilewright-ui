@@ -276,7 +276,24 @@ impl BrowserUi {
         Ok(())
     }
     pub fn peek_actions(&self) -> String {
-        self.app.ui().peek_actions().map_or_else(||"null".into(), |batch| json!({"id":batch.id.get().to_string(),"actions":batch.actions.iter().map(|action|match action { Action::SubmitChat{text}=>json!({"kind":"chat","text":text}) }).collect::<Vec<_>>()}).to_string())
+        self.app.ui().peek_actions().map_or_else(
+            || "null".into(),
+            |batch| {
+                json!({
+                    "id": batch.id.get().to_string(),
+                    "actions": batch.actions.iter().map(|action| match action {
+                        Action::SubmitChat { text } => json!({"kind": "chat", "text": text}),
+                        Action::SubmitField { widget, revision, text } => json!({
+                            "kind": "field", "text": text,
+                            "widget_id": widget.id.get().to_string(),
+                            "widget_generation": widget.generation.get().to_string(),
+                            "text_revision": revision.get().to_string(),
+                        }),
+                    }).collect::<Vec<_>>(),
+                })
+                .to_string()
+            },
+        )
     }
     pub fn ack_actions(&mut self, id: &str) -> Result<()> {
         self.app
