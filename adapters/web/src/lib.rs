@@ -21,7 +21,11 @@ pub fn utf16_to_utf8(text: &str, offset: usize) -> Result<usize, InvalidOffset> 
             return Err(InvalidOffset);
         }
     }
-    if units == offset { Ok(text.len()) } else { Err(InvalidOffset) }
+    if units == offset {
+        Ok(text.len())
+    } else {
+        Err(InvalidOffset)
+    }
 }
 
 /// Convert an exact UTF-8 character boundary into a UTF-16 DOM offset.
@@ -44,7 +48,11 @@ mod tests {
     #[test]
     fn round_trips_unicode_character_boundaries_without_splitting_surrogates() {
         let text = "a👩🏽\u{200d}💻e\u{301}אב";
-        for byte in text.char_indices().map(|(byte, _)| byte).chain([text.len()]) {
+        for byte in text
+            .char_indices()
+            .map(|(byte, _)| byte)
+            .chain([text.len()])
+        {
             let units = utf8_to_utf16(text, byte).unwrap();
             assert_eq!(utf16_to_utf8(text, units), Ok(byte));
         }
