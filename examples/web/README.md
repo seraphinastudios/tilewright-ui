@@ -69,3 +69,20 @@ separately from the fast boundary tests. It qualifies real WASM execution and
 both explicit renderer backends using a neutral canvas, but does not qualify
 browser-native composition events, accessibility, clipboard permission prompts,
 or a complete DOM presenter.
+
+Physical key ownership uses a checked, nonzero u16 identity distinct from the
+semantic command. `browserKey(app,event,pressed)` maps browser `event.code` to a
+stable local identity, including distinct Enter/NumpadEnter and left/right
+modifiers. Unknown codes are unsupported and must not acquire world controls or
+trigger custom effects. The bridge submits only Enter/Escape semantics; native
+Backspace, Delete and text input are applied through `input` once. IME-marked
+key events carry no submit semantic. `consumed` controls routing; custom visual,
+selection or clipboard key effects additionally require `keyEffects === true`
+after the successful key call. A quarantined repeat may be consumed while
+`keyEffects` is false. Releases always use the original physical code.
+
+For a keyboard-triggered clipboard read use `ClipboardRead.pasteKey(app,
+physicalCode(event.code))`, which rechecks current ownership before starting the
+request. `key_effects(physical)` similarly fences synchronous custom key effects
+at their point of use; do not cache a previous true result across input/lifecycle
+calls. Direct `paste` remains available for a separate explicit button action.

@@ -23,3 +23,11 @@ test('permission failure, cancellation, and malformed text never edit', async ()
   clipboard.cancel(); resolve('first'); await assert.rejects(pending);
   assert.equal(edits,0);
 });
+
+
+test('keyboard clipboard requests require current unquarantined ownership', async () => {
+  let reads=0;
+  const app={snapshot:()=>snapshot,replace:()=>assert.fail('must not edit'),key_effects:()=>false};
+  await assert.rejects(new ClipboardRead().pasteKey(app,12,{readText:async()=>{reads+=1;return 'text';}}));
+  assert.equal(reads,0);
+});

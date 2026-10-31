@@ -5,8 +5,9 @@ use crate::{utf8_to_utf16, utf16_to_utf8};
 use serde_json::{Value, json};
 use tilewright_app::{App, FrameId, GeometryEpoch, PresentationStamp, SurfaceEpoch};
 use tilewright_ui::{
-    Action, BatchId, COMPOSER, ControlEpoch, Input, Limits, SUBMIT, TextCursor, TextRevision,
-    TextSelection, TextTarget, UiRevision, Viewport, WidgetGeneration, WidgetRef,
+    Action, BatchId, COMPOSER, ControlEpoch, Disposition, Input, Key, KeyEvent, Limits, SUBMIT,
+    TextCursor, TextRevision, TextSelection, TextTarget, UiRevision, Viewport, WidgetGeneration,
+    WidgetRef,
 };
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -128,6 +129,46 @@ impl BrowserUi {
     pub fn submit(&mut self) -> Result<()> {
         self.app.apply(Input::Activate(SUBMIT)).map_err(error)?;
         Ok(())
+    }
+    /// Physical identity is independent of the semantic command. Text editing
+    /// keys use `other`: native input is committed once with `replace`.
+    pub fn key(
+        &mut self,
+        physical: f64,
+        command: &str,
+        pressed: bool,
+        repeat: bool,
+    ) -> Result<String> {
+        let physical = u16::try_from(offset(physical)?).map_err(error)?;
+        if physical == 0 {
+            return Err("InvalidInput".into());
+        }
+        let key = match command {
+            "enter" => Key::Enter,
+            "escape" => Key::Escape,
+            "other" => Key::Other,
+            _ => return Err("InvalidInput".into()),
+        };
+        let disposition = self
+            .app
+            .apply(Input::Key(KeyEvent {
+                physical,
+                key,
+                pressed,
+                repeat,
+            }))
+            .map_err(error)?;
+        Ok(json!({"consumed": disposition == Disposition::Consumed,
+            "keyEffects": self.app.ui().can_apply_key_effect(physical)})
+        .to_string())
+    }
+    /// Recheck ownership at the point of a synchronous host key effect.
+    pub fn key_effects(&self, physical: f64) -> Result<bool> {
+        let physical = u16::try_from(offset(physical)?).map_err(error)?;
+        if physical == 0 {
+            return Err("InvalidInput".into());
+        }
+        Ok(self.app.ui().can_apply_key_effect(physical))
     }
     /// `generation`, `epoch`, and `revision` are captured before the native edit.
     #[allow(clippy::too_many_arguments)]
@@ -303,6 +344,47 @@ mod tests {
         ui.submit().unwrap();
         assert_eq!(state(&ui)["text"], "");
     }
+    #[test]
+    fn physical_keys_keep_independent_effect_eligibility() {
+        let mut ui = BrowserUi::new().unwrap();
+        ui.focus(true).unwrap();
+        let key = |ui: &mut BrowserUi, physical, pressed, repeat| -> Value {
+            serde_json::from_str(&ui.key(physical, "other", pressed, repeat).unwrap()).unwrap()
+        };
+        assert_eq!(key(&mut ui, 11., true, false)["keyEffects"], true);
+        assert_eq!(key(&mut ui, 12., true, false)["keyEffects"], true);
+        key(&mut ui, 11., false, false);
+        assert_eq!(key(&mut ui, 12., true, true)["keyEffects"], true);
+        ui.modal(true).unwrap();
+        ui.modal(false).unwrap();
+        ui.focus(true).unwrap();
+        let quarantined = key(&mut ui, 12., true, true);
+        assert_eq!(quarantined["consumed"], true);
+        assert_eq!(quarantined["keyEffects"], false);
+        key(&mut ui, 12., false, false);
+        assert_eq!(key(&mut ui, 12., true, false)["keyEffects"], true);
+    }
+
+    #[test]
+    fn distinct_enter_keys_each_submit_and_invalid_physical_ids_are_atomic() {
+        let mut ui = BrowserUi::new().unwrap();
+        ui.focus(true).unwrap();
+        replace(&mut ui, "first");
+        ui.key(11., "enter", true, false).unwrap();
+        replace(&mut ui, "second");
+        ui.key(12., "enter", true, false).unwrap();
+        let first: Value = serde_json::from_str(&ui.peek_actions()).unwrap();
+        assert_eq!(first["actions"][0]["text"], "first");
+        ui.ack_actions(first["id"].as_str().unwrap()).unwrap();
+        let second: Value = serde_json::from_str(&ui.peek_actions()).unwrap();
+        assert_eq!(second["actions"][0]["text"], "second");
+        let before = ui.snapshot().unwrap();
+        for physical in [0., -1., 65_536., 1.5, f64::NAN] {
+            assert!(ui.key(physical, "enter", true, false).is_err());
+            assert_eq!(ui.snapshot().unwrap(), before);
+        }
+    }
+
     #[test]
     fn refuses_lossy_browser_numbers_before_modifying_state() {
         let mut ui = BrowserUi::new().unwrap();

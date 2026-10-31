@@ -31,6 +31,7 @@ test('real Chromium executes shared WASM state and renderer backends', {timeout:
     const result = await page.evaluate(async () => {
       const {createUi,createWorld} = await import('./load.mjs');
       const {ClipboardRead} = await import('./clipboard.mjs');
+      const {browserKey,physicalCode} = await import('./boundary.mjs');
       const app = await createUi(); app.focus(true);
       const state=()=>JSON.parse(app.snapshot());
       const replace=text=>{const s=state();app.replace(text,text.length,text.length,s.generation,s.control.epoch,s.textRevision);};
@@ -63,7 +64,27 @@ test('real Chromium executes shared WASM state and renderer backends', {timeout:
         const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;document.body.append(canvas);
         const world=await createWorld(canvas,640,360,backend);world.render(640,360);backends.push(world.backend());world.free();canvas.remove();
       }
-      app.free(); return {invalidSurrogateOffset,atomicInvalid,malformedString,composingDoesNotSubmit,stablePeek,acknowledged,staleRejected,clipboardRejected,uncommitted,retired,backpressure,cancellation,backends};
+      app.free();
+      const keys=await createUi(); keys.focus(true);
+      const physical=(code,key,pressed,repeat=false)=>browserKey(keys,{code,key,repeat},pressed);
+      const keyReplace=text=>{const s=JSON.parse(keys.snapshot());keys.replace(text,text.length,text.length,s.generation,s.control.epoch,s.textRevision);};
+      keyReplace('first');physical('Enter','Enter',true);
+      keyReplace('second');physical('NumpadEnter','Enter',true);
+      const first=JSON.parse(keys.peek_actions());keys.ack_actions(first.id);
+      const second=JSON.parse(keys.peek_actions());
+      const distinctEnters=first.actions[0].text==='first'&&second.actions[0].text==='second';
+      physical('Enter','Enter',false);
+      const independentRelease=physical('NumpadEnter','Enter',true,true).keyEffects;
+      keys.modal(true);keys.modal(false);keys.focus(true);
+      const quarantined=physical('NumpadEnter','Enter',true,true);
+      const fencedEffects=quarantined.consumed&&!quarantined.keyEffects;
+      let reads=0;let clipboardKeyRejected=false;
+      try { await new ClipboardRead().pasteKey(keys,physicalCode('NumpadEnter'),{readText:async()=>{reads+=1;return 'forbidden';}}); }
+      catch { clipboardKeyRejected=reads===0; }
+      physical('NumpadEnter','Enter',false);
+      const freshEffects=physical('KeyA','a',true).keyEffects;
+      keys.free();
+      return {invalidSurrogateOffset,atomicInvalid,malformedString,composingDoesNotSubmit,stablePeek,acknowledged,staleRejected,clipboardRejected,uncommitted,retired,backpressure,cancellation,distinctEnters,independentRelease,fencedEffects,clipboardKeyRejected,freshEffects,backends};
     });
     for (const [name,value] of Object.entries(result)) if(name!=='backends') assert.equal(value,true,name);
     assert.equal(result.backends.length,2); assert.deepEqual(errors,[]);

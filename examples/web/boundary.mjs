@@ -52,3 +52,46 @@ export class PressOwnership {
     return owner;
   }
 }
+
+// Adapter-local physical IDs. They are separate from the semantic command and
+// remain stable across keyboard layouts, modifiers and composition sessions.
+// Unknown browser codes cannot acquire world controls or custom key effects.
+const physicalCodes = [
+  'Backquote','Backslash','BracketLeft','BracketRight','Comma','Equal','IntlBackslash',
+  'IntlRo','IntlYen','Minus','Period','Quote','Semicolon','Slash',
+  ...Array.from({length:10},(_,i)=>`Digit${i}`),
+  ...Array.from({length:26},(_,i)=>`Key${String.fromCharCode(65+i)}`),
+  'AltLeft','AltRight','Backspace','CapsLock','ContextMenu','ControlLeft','ControlRight',
+  'Enter','MetaLeft','MetaRight','ShiftLeft','ShiftRight','Space','Tab',
+  'Convert','KanaMode','Lang1','Lang2','Lang3','Lang4','Lang5','NonConvert',
+  'Delete','End','Help','Home','Insert','PageDown','PageUp',
+  'ArrowDown','ArrowLeft','ArrowRight','ArrowUp','NumLock',
+  ...Array.from({length:10},(_,i)=>`Numpad${i}`),
+  'NumpadAdd','NumpadBackspace','NumpadClear','NumpadClearEntry','NumpadComma',
+  'NumpadDecimal','NumpadDivide','NumpadEnter','NumpadEqual','NumpadHash',
+  'NumpadMemoryAdd','NumpadMemoryClear','NumpadMemoryRecall','NumpadMemoryStore',
+  'NumpadMemorySubtract','NumpadMultiply','NumpadParenLeft','NumpadParenRight',
+  'NumpadStar','NumpadSubtract','Escape','Fn','FnLock','PrintScreen','ScrollLock','Pause',
+  ...Array.from({length:24},(_,i)=>`F${i+1}`),
+  'BrowserBack','BrowserFavorites','BrowserForward','BrowserHome','BrowserRefresh',
+  'BrowserSearch','BrowserStop','Eject','LaunchApp1','LaunchApp2','LaunchMail',
+  'MediaPlayPause','MediaSelect','MediaStop','MediaTrackNext','MediaTrackPrevious',
+  'Power','Sleep','AudioVolumeDown','AudioVolumeMute','AudioVolumeUp','WakeUp',
+];
+const physicalIds = new Map(physicalCodes.map((code,index)=>[code,index+1]));
+export function physicalCode(code) {
+  const id=physicalIds.get(code);
+  if (id === undefined) throw new TypeError('Unsupported physical key code');
+  return id;
+}
+
+// Non-text commands only. Native input/composition performs edits once through
+// replace/preedit; Backspace, Delete, selection and clipboard are never applied
+// a second time by this key bridge. Custom key effects require keyEffects=true
+// after a successful call, independently of consumed=true.
+export function browserKey(app,event,pressed) {
+  const physical=physicalCode(event.code);
+  const composing=event.isComposing || event.keyCode === 229;
+  const command=composing ? 'other' : event.key === 'Enter' ? 'enter' : event.key === 'Escape' ? 'escape' : 'other';
+  return JSON.parse(app.key(physical,command,pressed,Boolean(event.repeat)));
+}

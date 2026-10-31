@@ -9,6 +9,10 @@ export class ClipboardRead {
   #pending = false;
   #generation = 0;
   cancel() { this.#generation += 1; }
+  async pasteKey(app, physical, clipboard = globalThis.navigator?.clipboard) {
+    if (!app.key_effects(physical)) throw new Error('Key effect is not owned');
+    return this.paste(app,clipboard);
+  }
   async paste(app, clipboard = globalThis.navigator?.clipboard) {
     if (this.#pending) throw new Error('Clipboard read already pending');
     if (!clipboard?.readText) throw new Error('Clipboard read unavailable');

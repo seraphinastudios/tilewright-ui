@@ -23,3 +23,16 @@ test('epoch changes quarantine release even when final permission is true', () =
   assert.equal(ownership.down('Enter', false), 'ui');
   assert.equal(ownership.up('Enter'), 'ui');
 });
+
+test('browser physical IDs separate Enter sources and native edit semantics', async () => {
+  const {physicalCode,browserKey}=await import('./boundary.mjs');
+  assert.notEqual(physicalCode('Enter'),physicalCode('NumpadEnter'));
+  assert.notEqual(physicalCode('ControlLeft'),physicalCode('ControlRight'));
+  assert.throws(()=>physicalCode('Unidentified'));
+  const calls=[];const app={key:(...args)=>{calls.push(args);return '{"consumed":true,"keyEffects":false}';}};
+  assert.deepEqual(browserKey(app,{code:'Enter',key:'Enter',isComposing:true},true),{consumed:true,keyEffects:false});
+  browserKey(app,{code:'NumpadEnter',key:'Enter',repeat:false},true);
+  browserKey(app,{code:'Backspace',key:'Backspace'},true);
+  assert.deepEqual(calls.map(call=>call[1]),['other','enter','other']);
+  assert.notEqual(calls[0][0],calls[1][0]);
+});
