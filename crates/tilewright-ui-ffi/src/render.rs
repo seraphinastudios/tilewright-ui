@@ -117,69 +117,101 @@ pub unsafe extern "C" fn twui_render_prepare(
     unsafe {
         with_context(context, |engine| {
             check_size(output)?;
-            if engine.renderer.is_none() {
-                return Err(INVALID_ARGUMENT);
-            }
             let viewport = viewport_from_c(read_sized(viewport)?)?;
-            let physical = [
-                viewport.width * viewport.scale,
-                viewport.height * viewport.scale,
-            ];
-            if physical
-                .iter()
-                .any(|v| !v.is_finite() || *v < 1.0 || *v > 4096.0 || v.fract() != 0.0)
-            {
-                return Err(INVALID_ARGUMENT);
-            }
-            let physical = physical.map(|v| v as u32);
-            if u64::from(physical[0]) * u64::from(physical[1]) > 4 * 1024 * 1024 {
-                return Err(LIMIT_EXCEEDED);
-            }
-            let prepared = engine.app.prepare(viewport).map_err(app_error)?;
-            engine
-                .frames
-                .retain(|frame| frame.stamp.surface == prepared.stamp.surface);
-            let rendered = (|| {
-                let compiled = engine
-                    .renderer
-                    .as_mut()
-                    .ok_or(INVALID_ARGUMENT)?
-                    .compile(&prepared.snapshot, &prepared.layout, physical)
-                    .map_err(|_| 13u32)?;
-                let pixels = compiled
-                    .standalone([0.0; 4])
-                    .map_err(|_| 13u32)?
-                    .render_rgba()
-                    .map_err(|_| 13u32)?;
-                Ok::<_, u32>((compiled, pixels))
-            })();
-            let (compiled, pixels) = match rendered {
-                Ok(value) => value,
-                Err(error) => {
-                    engine
-                        .app
-                        .discard_prepared(prepared.stamp)
-                        .map_err(app_error)?;
-                    return Err(error);
-                }
-            };
-            output.write(Image {
-                struct_size: size_of::<Image>() as u32,
-                width: pixels.width,
-                height: pixels.height,
-                stride: pixels.width * 4,
-                byte_length: pixels.rgba8.len() as u64,
-                stamp: stamp_to_c(prepared.stamp),
-            });
-            engine.frames.push(Frame {
-                stamp: prepared.stamp,
-                compiled,
-                pixels: pixels.rgba8,
-                was_displayed: false,
-            });
+            let image = prepare_image(engine, Some(viewport))?;
+            output.write(image);
             Ok(())
         })
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twui_render_prepare_current(
+    context: *mut Context,
+    output: *mut Image,
+) -> u32 {
+    // SAFETY: all foreign pointers obey the public ABI contract.
+    unsafe {
+        with_context(context, |engine| {
+            check_size(output)?;
+            let image = prepare_image(engine, None)?;
+            output.write(image);
+            Ok(())
+        })
+    }
+}
+
+/// Both entry points validate output bounds before retaining a prepared frame.
+fn prepare_image(
+    engine: &mut Engine,
+    requested: Option<tilewright_app::Viewport>,
+) -> Result<Image> {
+    if engine.renderer.is_none() {
+        return Err(INVALID_ARGUMENT);
+    }
+    let viewport = requested.or_else(|| engine.app.viewport()).ok_or(STALE)?;
+    let physical = [
+        viewport.width * viewport.scale,
+        viewport.height * viewport.scale,
+    ];
+    if physical
+        .iter()
+        .any(|v| !v.is_finite() || *v < 1.0 || *v > 4096.0 || v.fract() != 0.0)
+    {
+        return Err(INVALID_ARGUMENT);
+    }
+    let physical = physical.map(|v| v as u32);
+    if u64::from(physical[0]) * u64::from(physical[1]) > 4 * 1024 * 1024 {
+        return Err(LIMIT_EXCEEDED);
+    }
+    let prepared = if requested.is_some() {
+        engine.app.prepare(viewport)
+    } else {
+        engine.app.prepare_current()
+    }
+    .map_err(app_error)?;
+    engine
+        .frames
+        .retain(|frame| frame.stamp.surface == prepared.stamp.surface);
+    let rendered = (|| {
+        let compiled = engine
+            .renderer
+            .as_mut()
+            .ok_or(INVALID_ARGUMENT)?
+            .compile(&prepared.snapshot, &prepared.layout, physical)
+            .map_err(|_| 13u32)?;
+        let pixels = compiled
+            .standalone([0.0; 4])
+            .map_err(|_| 13u32)?
+            .render_rgba()
+            .map_err(|_| 13u32)?;
+        Ok::<_, u32>((compiled, pixels))
+    })();
+    let (compiled, pixels) = match rendered {
+        Ok(value) => value,
+        Err(error) => {
+            engine
+                .app
+                .discard_prepared(prepared.stamp)
+                .map_err(app_error)?;
+            return Err(error);
+        }
+    };
+    let image = Image {
+        struct_size: size_of::<Image>() as u32,
+        width: pixels.width,
+        height: pixels.height,
+        stride: pixels.width * 4,
+        byte_length: pixels.rgba8.len() as u64,
+        stamp: stamp_to_c(prepared.stamp),
+    };
+    engine.frames.push(Frame {
+        stamp: prepared.stamp,
+        compiled,
+        pixels: pixels.rgba8,
+        was_displayed: false,
+    });
+    Ok(image)
 }
 
 #[unsafe(no_mangle)]
@@ -537,6 +569,101 @@ mod tests {
                 ),
                 STALE
             );
+            // Reuse the installed owned font pack in an independent embedded
+            // context, so this proof cannot accidentally rely on demo geometry.
+            let mut renderer = None;
+            assert_eq!(
+                with_context(context, |engine| {
+                    renderer = engine.renderer.take();
+                    Ok(())
+                }),
+                OK
+            );
+            assert_eq!(twui_destroy(context), OK);
+            assert_eq!(twui_create_with_composition(&config, 2, &mut context), OK);
+            assert_eq!(
+                with_context(context, |engine| {
+                    engine.renderer = renderer;
+                    Ok(())
+                }),
+                OK
+            );
+            assert_eq!(twui_render_prepare_current(context, &mut first), STALE);
+            let mut layout = Layout {
+                struct_size: size_of::<Layout>() as u32,
+                reserved: 0,
+                viewport_width: 640.0,
+                viewport_height: 480.0,
+                viewport_scale: 1.0,
+                bounds_x: 150.0,
+                bounds_y: 90.0,
+                bounds_width: 300.0,
+                bounds_height: 80.0,
+                clip_x: 150.0,
+                clip_y: 90.0,
+                clip_width: 300.0,
+                clip_height: 80.0,
+            };
+            assert_eq!(twui_set_layout(context, &layout), OK);
+            assert_eq!(
+                with_context(context, |engine| {
+                    engine.bind_field("embedded").map_err(app_error)?;
+                    engine
+                        .apply(tilewright_ui::Input::Focus(Some(tilewright_ui::COMPOSER)))
+                        .map_err(app_error)?;
+                    Ok(())
+                }),
+                OK
+            );
+            assert_eq!(twui_render_prepare_current(context, &mut first), OK);
+            // An identical layout must retain unacknowledged pixel resources.
+            assert_eq!(twui_set_layout(context, &layout), OK);
+            assert_eq!(
+                twui_copy_rgba(
+                    context,
+                    &first.stamp,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                BUFFER_TOO_SMALL
+            );
+            assert_eq!(twui_get_ime_rect(context, &first.stamp, &mut rect), STALE);
+            assert_eq!(twui_ack_presented(context, &first.stamp), OK);
+            assert_eq!(twui_get_ime_rect(context, &first.stamp, &mut rect), OK);
+            assert!(rect.x >= 150.0 && rect.x < 450.0 && rect.y >= 90.0 && rect.y < 170.0);
+            let mut embedded_pixels = vec![0; required as usize];
+            assert_eq!(
+                twui_copy_rgba(
+                    context,
+                    &first.stamp,
+                    embedded_pixels.as_mut_ptr(),
+                    required,
+                    &mut required
+                ),
+                OK
+            );
+            assert_eq!(&embedded_pixels[..4], &[0, 0, 0, 0]);
+            assert!(embedded_pixels.chunks_exact(4).any(|pixel| pixel[3] != 0));
+            layout.bounds_x += 20.0;
+            layout.clip_x += 20.0;
+            assert_eq!(twui_set_layout(context, &layout), OK);
+            assert_eq!(twui_get_ime_rect(context, &first.stamp, &mut rect), STALE);
+            assert_eq!(twui_ack_presented(context, &first.stamp), STALE);
+            assert_eq!(
+                twui_copy_rgba(
+                    context,
+                    &first.stamp,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                STALE
+            );
+            assert_eq!(twui_render_prepare_current(context, &mut second), OK);
+            assert_eq!(twui_ack_presented(context, &second.stamp), OK);
+            assert_eq!(twui_get_ime_rect(context, &second.stamp, &mut rect), OK);
+            assert!(rect.x >= 170.0 && rect.x < 470.0);
             assert_eq!(twui_destroy(context), OK);
         }
     }

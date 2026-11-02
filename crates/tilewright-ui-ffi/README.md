@@ -53,3 +53,18 @@ action backpressure, copy sizing, modal cancellation epochs, presentation
 ordering, wrong-thread rejection and repeated create/use/destroy. The Rust unit
 test injects a panic and reentry guard state. C sanitizers can check the C harness
 and its buffers; an ordinary Rust static library is not sanitizer-instrumented.
+
+Embedded hosts opt in with `twui_create_with_composition`: `CHAT_PANEL` keeps
+chat semantics without a world region; `SINGLE_FIELD` emits typed field actions,
+accepts empty submission and keeps the draft. ABI 2 and existing POD layouts stay
+unchanged. `twui_set_layout` supplies explicit logical bounds, clip and viewport;
+`twui_prepare_current` and `twui_render_prepare_current` retain that exact
+attachment. Changed attachments retire displayed geometry immediately.
+
+`twui_bind_field` atomically loads another field, advances its identity and retires
+old focus, composition and physical ownership. Queued actions remain immutable.
+Use `twui_get_field_action` to retrieve the source generation and text revision;
+the host keeps the mapping to its own document/object identity. Acknowledgment
+accepts a batch for host processing and does not authorize a domain mutation.
+`twui_copy_action` supports both action kinds and permits zero-byte field payloads.
+`tests/embedded.c` covers these additions through the public C header.
