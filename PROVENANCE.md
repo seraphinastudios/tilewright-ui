@@ -1,8 +1,9 @@
 # Source provenance
 
 The initial shared UI/application implementation is MIT-licensed work authored
-for Seraphina Studios in this repository. Existing and proprietary game
-implementations, assets and fixtures are not reusable inputs to these libraries.
+for Seraphina Studios in this repository. No existing game implementation,
+whether open-source (including GPL) or proprietary, nor its assets or fixtures,
+is a reusable input to these libraries.
 
 Any exact extraction from MIT Tilewright editor code must be recorded here with
 its source revision, paths, original notices, destination and transformations

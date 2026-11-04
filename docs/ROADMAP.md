@@ -25,8 +25,8 @@ C/SDL and browser hosts. A broader widget catalog follows real consumer needs.
 | --- | --- | --- |
 | Tilewright editor | Text controls, focus, panels, viewport composition and application lifecycle | Document capabilities, tools, World transactions, Review/Accept and undo/redo |
 | Existing C/SDL game client | A C facade hosted in an existing widget slot | Existing loop/presenter, protocol commands, gameplay, old widget coexistence and capture privacy |
-| Future native game client | Safe Rust UI/app APIs and native host adapter | Session snapshots, authorization, network protocol and domain actions |
-| Future browser game client | Shared state/actions with a browser presenter | Browser services, transport, session and game UI policy |
+| Future native client for that game | Safe Rust UI/app APIs and native host adapter | Session snapshots, authorization, network protocol and domain actions |
+| Future browser client for that game | Shared state/actions with a browser presenter | Browser services, transport, session and game UI policy |
 | Studio game | Shared interaction and renderer integration where appropriate | Game-specific data/assets, transport, gameplay and product-specific interface policy |
 
 Names such as `game-sdl-client` or `game-web-client` belong to consumer
