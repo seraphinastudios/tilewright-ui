@@ -24,12 +24,12 @@ C/SDL and browser hosts. A broader widget catalog follows real consumer needs.
 | Consumer | Shared use | Consumer-owned responsibilities |
 | --- | --- | --- |
 | Tilewright editor | Text controls, focus, panels, viewport composition and application lifecycle | Document capabilities, tools, World transactions, Review/Accept and undo/redo |
-| Classic Atrinik C/SDL | A C facade hosted in an existing widget slot | Existing loop/presenter, protocol commands, gameplay, old widget coexistence and capture privacy |
-| Future Atrinik native client | Safe Rust UI/app APIs and native host adapter | Session snapshots, authorization, network protocol and domain actions |
-| Future Atrinik browser client | Shared state/actions with a browser presenter | Browser services, transport, session and game UI policy |
+| Existing C/SDL game client | A C facade hosted in an existing widget slot | Existing loop/presenter, protocol commands, gameplay, old widget coexistence and capture privacy |
+| Future native client for that game | Safe Rust UI/app APIs and native host adapter | Session snapshots, authorization, network protocol and domain actions |
+| Future browser client for that game | Shared state/actions with a browser presenter | Browser services, transport, session and game UI policy |
 | Studio game | Shared interaction and renderer integration where appropriate | Game-specific data/assets, transport, gameplay and product-specific interface policy |
 
-Names such as `atrinik-sdl-client` or `atrinik-web-client` belong to consumer
+Names such as `game-sdl-client` or `game-web-client` belong to consumer
 executables/adapters, not dependencies of this library. A C application need not
 be repackaged as a Rust crate to embed the C facade. Existing client package
 names need not change merely to adopt common widgets.
@@ -41,8 +41,8 @@ names need not change merely to adopt common widgets.
 - Prove the shared chat/input/modal slice in standalone hosts.
 - Adopt one editor string inspector control without changing document or
   transaction authority. Retain existing regression and native acceptance
-  coverage. In parallel, add one optional Classic local-echo chat panel through
-  its existing widget/event/deinit hooks.
+  coverage. In parallel, add one optional local-echo chat panel to the C/SDL
+  game client through its existing widget/event/deinit hooks.
   Keep its single presenter, layering, coordinate and privacy contracts. Compare
   primitive submission with a bounded renderer-produced overlay before choosing
   a wider migration.
