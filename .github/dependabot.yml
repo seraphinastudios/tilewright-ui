@@ -18,13 +18,35 @@ updates:
         - "tilewright-*"
     groups:
       # The renderer crates come from one release and are pinned with "=", so
-      # every update, including 0.x "majors", moves together. Keep this group
-      # first so it never splits into per-crate PRs. tools/check_architecture.py
-      # pins the same cohort version (RENDERER_VERSION) and must move with it.
+      # every update, including 0.x "majors", moves together. Keep these
+      # groups before the catch-all so they never split into per-crate PRs.
+      # A renderer PR also needs hand edits: RENDERER_VERSION in
+      # tools/check_architecture.py, the expected versions in
+      # tests/architecture/test_boundaries.py, and the version mentions in
+      # README.md, docs/RELEASES.md and crates/tilewright-ui-render/README.md
+      # and PROVENANCE.md. Until RENDERER_VERSION moves, the policy check fails.
       tilewright-renderer:
         patterns:
           - "tilewright-render-*"
           - "tilewright-scene"
+      # The wasm-bindgen library family is exact-pinned and must match the
+      # wasm-bindgen CLI that examples/web/build.sh requires. A bump needs
+      # build.sh and examples/web/README.md edited by hand; the policy check
+      # in tools/check_architecture.py fails until they match.
+      wasm-bindgen:
+        patterns:
+          - "wasm-bindgen"
+          - "wasm-bindgen-futures"
+          - "js-sys"
+          - "web-sys"
+      # The native example builds SDL from source through sdl3-sys. An sdl3
+      # bump that needs a newer bundled SDL than tools/find_sdl_config.py and
+      # examples/c-sdl/CMakeLists.txt pin (3.4.18) needs hand edits there. If
+      # a workspace member ever adopts tilewright-render-sdl3, sdl3 must move
+      # with the renderer group instead.
+      sdl3:
+        patterns:
+          - "sdl3"
       cargo-minor-patch:
         update-types:
           - minor
