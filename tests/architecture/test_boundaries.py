@@ -106,6 +106,9 @@ class Boundaries(unittest.TestCase):
         (web / "README.md").write_text("Use wasm-bindgen 0.2.128.\n")
         self.assertEqual(POLICY.check(self.root),
                          ["examples/web/build.sh: must name the wasm-bindgen 0.2.128 CLI"])
+        (self.root / "Cargo.toml").write_text("[workspace.dependencies]\n")
+        self.assertIn("examples/web/README.md: names a wasm-bindgen CLI but the workspace has no wasm-bindgen pin",
+                      POLICY.check(self.root))
 
 
 if __name__ == "__main__":
