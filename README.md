@@ -28,8 +28,8 @@ native HTML controls over the rendered world and preserves the same semantic
 model. Build and browser tests do not establish OS IME, screen-reader or Classic
 integration support; those capabilities require their own actual host evidence.
 
-Rust 1.97.1 is pinned. The renderer dependency targets the independent `0.6.2`
-family published from renderer source release `v1.21.0`. The committed
+Rust 1.97.1 is pinned. The renderer dependency targets the independent `0.7.0`
+family published from renderer source release `v1.25.0`. The committed
 `Cargo.lock` resolves registry packages only. Before checks, prepare the
 separately licensed font data outside the checkout:
 

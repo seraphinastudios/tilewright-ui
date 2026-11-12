@@ -3,27 +3,33 @@
 The current workspace is an unpublished prototype. Every package has
 `publish = false`; declaring version `0.1.0` does not reserve a registry name or
 authorize an upload. Renderer `0.6.0` and its immutable source release remain an
-independent, unchanged delivery. This workspace targets the published `0.6.2` successor through a committed
+independent, unchanged delivery. This workspace targets the published `0.7.0` successor through a committed
 registry-only `Cargo.lock`. This dependency qualification does not publish or
 stabilize the UI packages.
 
 ## Renderer dependency provenance
 
-Renderer `0.6.2` was published from immutable source release `v1.21.0`
-(release ID `429939049`), revision
-`55f13ac311a5574b242e2520942377e51fd6b7cb`. Its `crate-release.json` SHA-256 is
-`a5f5157fed68245b7eb74766f82a66b85f58920e31382512c3462d61dc14d43f`.
-All eight released crate archives were verified against the release manifest,
-registry archive bytes and sparse-index checksums, with owner `zoeyrose`
-(registry user ID `437663`). Every intra-family dependency requires `=0.6.2`.
+Renderer `0.7.0` was published from immutable source release `v1.25.0`
+(release ID `443269262`), revision
+`0607c99c15c3bce2b6c58fa835032fe42acfa571`. Its `crate-release.json` SHA-256 is
+`ac2e114eb53b1caac29040664c02d93b86105f45eb363e3a74f11a1de0978e22`.
+All eight released crate archive digests match the crates.io sparse-index
+checksums, with owner `zoeyrose` (registry user ID `437663`). Every
+intra-family dependency requires `=0.7.0`.
 
-The lock contains seven family packages, all from crates.io at `0.6.2` with the
+The lock contains seven family packages, all from crates.io at `0.7.0` with the
 verified archive checksums. The eighth, `tilewright-render-sdl3`, is pinned in
-workspace dependencies but unused by current workspace packages; its compatible
-release was verified separately. The native example uses `sdl3` directly.
-This is the first committed lockfile, so there is no earlier committed
-transitive-version baseline to compare. Future updates must preserve a verified,
-compatible renderer cohort and review the full lockfile delta.
+workspace dependencies but unused by current workspace packages; its index
+entry requires `sdl3 ^0.22.1`, matching the native example's direct `=0.22.1`.
+
+The update from `0.6.2` skipped the intermediate `0.6.3` cohort. `0.6.3` moved
+`tilewright-render-ui` text layout from cosmic-text to Parley `0.12` (fontique
+without system-font discovery, swash rasterization), which removes
+cosmic-text, fontdb and ttf-parser from the lock. `0.7.0` moved
+`tilewright-render-sdl3` to `sdl3 0.22.1`. The lockfile delta is limited to the
+renderer cohort, `sdl3` and the packages that text-layout change adds or removes;
+SDL itself stays at `sdl3-sys 0.7.2+SDL-3.4.18`. Future updates must preserve a
+verified, compatible renderer cohort and review the full lockfile delta.
 
 ## Proposed first package family
 
@@ -31,7 +37,7 @@ compatible renderer cohort and review the full lockfile delta.
 | --- | --- | --- |
 | `tilewright-ui` | Unicode segmentation | Unpublished headless core |
 | `tilewright-app` | `tilewright-ui` | Unpublished host coordination |
-| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.6.2` APIs | Unpublished renderer adapter |
+| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.7.0` APIs | Unpublished renderer adapter |
 | `tilewright-ui-ffi` | `tilewright-ui`, `tilewright-app`; optional UI renderer | Unpublished C facade |
 
 The native demo and browser host packages remain unpublished. Avoid creating
@@ -46,7 +52,7 @@ again at that point; a previous registry 404 is not a reservation.
 
 ## Required evidence before publication
 
-1. Resolve and commit the real registry dependency graph after renderer `0.6.2`
+1. Resolve and commit the real registry dependency graph after renderer `0.7.0`
    is published. A task-local renderer patch or generated candidate lock is not
    registry-consumer evidence.
 2. Reconcile implemented APIs with the documented contracts; retain independent

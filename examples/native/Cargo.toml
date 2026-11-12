@@ -13,7 +13,7 @@ publish = false
 tilewright-ui.workspace = true
 tilewright-app.workspace = true
 tilewright-ui-render = { workspace = true, features = ["prototype"] }
-sdl3 = { version = "=0.20.0", default-features = false, features = ["build-from-source-static"] }
+sdl3 = { version = "=0.22.1", default-features = false, features = ["build-from-source-static"] }
 
 [lints]
 workspace = true
