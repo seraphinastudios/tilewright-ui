@@ -24,12 +24,17 @@ entry requires `sdl3 ^0.22.1`, matching the native example's direct `=0.22.1`.
 
 The update from `0.6.2` skipped the intermediate `0.6.3` cohort. `0.6.3` moved
 `tilewright-render-ui` text layout from cosmic-text to Parley `0.12` (fontique
-without system-font discovery, swash rasterization), which removes
-cosmic-text, fontdb and ttf-parser from the lock. `0.7.0` moved
-`tilewright-render-sdl3` to `sdl3 0.22.1`. The lockfile delta is limited to the
-renderer cohort, `sdl3` and the packages that text-layout change adds or removes;
-SDL itself stays at `sdl3-sys 0.7.2+SDL-3.4.18`. Future updates must preserve a
-verified, compatible renderer cohort and review the full lockfile delta.
+without system-font discovery, swash rasterization), which removes cosmic-text,
+fontdb and ttf-parser from the lock. `0.7.0` moved `tilewright-render-sdl3` to
+`sdl3 0.22.1`. From `0.6.3` on, each host-supplied font's declared family must
+equal the face's primary family name exactly (its typographic family name, else
+its family name); `0.6.2` also accepted any other family name the face carried.
+Fonts that loaded under a secondary family name, or the same font bytes
+supplied twice under different names, are now refused as invalid fonts. The
+lockfile delta is limited to the renderer cohort, `sdl3` and the packages that
+text-layout change adds or removes; SDL itself stays at `sdl3-sys
+0.7.2+SDL-3.4.18`. Future updates must preserve a verified, compatible renderer
+cohort and review the full lockfile delta.
 
 ## Proposed first package family
 
