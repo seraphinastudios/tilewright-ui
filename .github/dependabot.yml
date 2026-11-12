@@ -1,0 +1,70 @@
+version: 2
+# Minor and patch updates are grouped into one pull request per ecosystem;
+# major updates still open one pull request each. Cooldown waits for new
+# releases to settle before proposing them (security updates are not delayed).
+# Cargo groups cannot split by dependency type (Dependabot supports
+# dependency-type only for bundler, composer, mix, maven, npm and pip).
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+      # First-party Tilewright crates release together; take them without delay.
+      exclude:
+        - "tilewright-*"
+    groups:
+      # The renderer crates come from one release and are pinned with "=", so
+      # every update, including 0.x "majors", moves together. Keep these
+      # groups before the catch-all so they never split into per-crate PRs.
+      # A renderer PR also needs hand edits. The policy check fails until
+      # RENDERER_VERSION in tools/check_architecture.py and the expected
+      # versions in tests/architecture/test_boundaries.py move. The docs carry
+      # the version too, and docs/RELEASES.md records the source release:
+      # search the tree for the old version (git grep) and update each place.
+      tilewright-renderer:
+        patterns:
+          - "tilewright-render-*"
+          - "tilewright-scene"
+      # The wasm-bindgen library family is exact-pinned and must match the
+      # wasm-bindgen CLI that examples/web/build.sh requires. A bump needs
+      # build.sh and examples/web/README.md edited by hand; the policy check
+      # in tools/check_architecture.py fails until they match.
+      wasm-bindgen:
+        patterns:
+          - "wasm-bindgen"
+          - "wasm-bindgen-futures"
+          - "js-sys"
+          - "web-sys"
+      # The native example builds SDL from source through sdl3-sys. An sdl3
+      # bump that needs a newer bundled SDL than the pinned 3.4.18 needs hand
+      # edits: tools/find_sdl_config.py and examples/c-sdl/CMakeLists.txt
+      # enforce the pin, and tests and docs repeat it (git grep the old SDL
+      # and sdl3 versions). If a workspace member ever adopts
+      # tilewright-render-sdl3, sdl3 must move with the renderer group instead.
+      sdl3:
+        patterns:
+          - "sdl3"
+      cargo-minor-patch:
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions-minor-patch:
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"

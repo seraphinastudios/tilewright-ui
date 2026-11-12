@@ -6,12 +6,15 @@ small allowlists make a new capability or package an explicit review decision.
 """
 import argparse
 from pathlib import Path
+import re
 import sys
 import tomllib
 
 RENDERER = {f"tilewright-{name}" for name in (
     "scene", "render-ui", "render-api", "render-resources", "render-world",
     "render-testkit", "render-wgpu", "render-sdl3")}
+# The renderer crates release as one cohort; every edge pins this exact version.
+RENDERER_VERSION = "=0.7.0"
 ALLOWED = {
     "tilewright-ui": {"unicode-segmentation"},
     "tilewright-app": {"tilewright-ui"},
@@ -20,6 +23,31 @@ ALLOWED = {
     "tilewright-ui-web": {"tilewright-ui", "tilewright-app", "wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys", "serde_json"} | RENDERER,
     "tilewright-ui-native-demo": {"tilewright-ui", "tilewright-app", "tilewright-ui-render", "sdl3", "sha2"} | RENDERER,
 }
+
+
+# The browser example runs an installed wasm-bindgen CLI that must equal the
+# library pin exactly. These files name that CLI version by hand.
+WASM_BINDGEN_CLI = ("examples/web/build.sh", "examples/web/README.md")
+
+
+def wasm_bindgen_cli(root, inherited):
+    """Every hand-written wasm-bindgen CLI version must equal the library pin."""
+    entry = inherited.get("wasm-bindgen")
+    entry = {"version": entry} if isinstance(entry, str) else entry or {}
+    pinned = entry.get("version", "").removeprefix("=")
+    errors = []
+    for name in WASM_BINDGEN_CLI:
+        path = root / name
+        if not path.is_file():
+            continue
+        found = set(re.findall(r"wasm-bindgen (\d+\.\d+\.\d+)", path.read_text()))
+        if not pinned:
+            errors.append(f"{name}: names a wasm-bindgen CLI but the workspace has no wasm-bindgen pin")
+        elif not found:
+            errors.append(f"{name}: must name the wasm-bindgen {pinned} CLI")
+        for version in sorted(found - {pinned}):
+            errors.append(f"{name}: wasm-bindgen CLI {version} must equal the workspace pin {pinned}")
+    return errors
 
 
 def tables(manifest):
@@ -37,8 +65,8 @@ def check(root):
         errors.append("Cargo.toml: committed dependency overrides are forbidden")
     for alias, entry in inherited.items():
         entry = {"version": entry} if isinstance(entry, str) else entry
-        if entry.get("package", alias) in RENDERER and entry.get("version") != "=0.6.2":
-            errors.append(f"Cargo.toml: renderer dependency {alias} must use =0.6.2")
+        if entry.get("package", alias) in RENDERER and entry.get("version") != RENDERER_VERSION:
+            errors.append(f"Cargo.toml: renderer dependency {alias} must use {RENDERER_VERSION}")
         if any(key in entry for key in ("git", "branch", "rev", "tag", "registry")):
             errors.append(f"Cargo.toml: workspace dependency {alias} has an unreviewed source")
         if "path" in entry:
@@ -47,6 +75,7 @@ def check(root):
                 errors.append(f"Cargo.toml: workspace dependency {alias} escapes or misses a local package")
         elif not entry.get("version", "").startswith("="):
             errors.append(f"Cargo.toml: workspace dependency {alias} must use an exact version")
+    errors += wasm_bindgen_cli(root, inherited)
     for config in (root / ".cargo").glob("config*"):
         errors.append(f"{config.relative_to(root)}: committed Cargo config requires explicit policy review")
     manifests = sorted(root.glob("crates/*/Cargo.toml"))
@@ -102,8 +131,8 @@ def check(root):
                 version = spec.get("version", "")
                 if not version.startswith("=") or any(c in version for c in "*<>^~, "):
                     errors.append(f"{prefix}: external dependency {alias} needs one exact version")
-                if dependency in RENDERER and version != "=0.6.2":
-                    errors.append(f"{prefix}: renderer dependencies must retain =0.6.2")
+                if dependency in RENDERER and version != RENDERER_VERSION:
+                    errors.append(f"{prefix}: renderer dependencies must retain {RENDERER_VERSION}")
     for name in ("tilewright-ui", "tilewright-app", "tilewright-ui-render"):
         if name not in packages:
             errors.append(f"missing required package {name}")

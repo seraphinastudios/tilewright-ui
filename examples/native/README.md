@@ -2,7 +2,7 @@
 
 This unpublished host owns its SDL3 window, event loop, clipboard, procedural map
 and single presentation. Shared UI owns the bounded chat/composer, selection,
-composition, focus/modal state, key ownership and actions. Shared renderer 0.6
+composition, focus/modal state, key ownership and actions. Shared renderer 0.7
 shapes and paints the overlay through its CPU reference path. This is a bounded
 CPU demonstration, not GPU performance or Classic integration acceptance.
 
