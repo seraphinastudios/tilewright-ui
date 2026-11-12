@@ -6,6 +6,7 @@ small allowlists make a new capability or package an explicit review decision.
 """
 import argparse
 from pathlib import Path
+import re
 import sys
 import tomllib
 
@@ -22,6 +23,31 @@ ALLOWED = {
     "tilewright-ui-web": {"tilewright-ui", "tilewright-app", "wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys", "serde_json"} | RENDERER,
     "tilewright-ui-native-demo": {"tilewright-ui", "tilewright-app", "tilewright-ui-render", "sdl3", "sha2"} | RENDERER,
 }
+
+
+# The browser example runs an installed wasm-bindgen CLI that must equal the
+# library pin exactly. These files name that CLI version by hand.
+WASM_BINDGEN_CLI = ("examples/web/build.sh", "examples/web/README.md")
+
+
+def wasm_bindgen_cli(root, inherited):
+    """Every hand-written wasm-bindgen CLI version must equal the library pin."""
+    entry = inherited.get("wasm-bindgen")
+    entry = {"version": entry} if isinstance(entry, str) else entry or {}
+    pinned = entry.get("version", "").removeprefix("=")
+    errors = []
+    for name in WASM_BINDGEN_CLI:
+        path = root / name
+        if not path.is_file():
+            continue
+        found = set(re.findall(r"wasm-bindgen (\d+\.\d+\.\d+)", path.read_text()))
+        if not pinned:
+            errors.append(f"{name}: names a wasm-bindgen CLI but the workspace has no wasm-bindgen pin")
+        elif not found:
+            errors.append(f"{name}: must name the wasm-bindgen {pinned} CLI")
+        for version in sorted(found - {pinned}):
+            errors.append(f"{name}: wasm-bindgen CLI {version} must equal the workspace pin {pinned}")
+    return errors
 
 
 def tables(manifest):
@@ -49,6 +75,7 @@ def check(root):
                 errors.append(f"Cargo.toml: workspace dependency {alias} escapes or misses a local package")
         elif not entry.get("version", "").startswith("="):
             errors.append(f"Cargo.toml: workspace dependency {alias} must use an exact version")
+    errors += wasm_bindgen_cli(root, inherited)
     for config in (root / ".cargo").glob("config*"):
         errors.append(f"{config.relative_to(root)}: committed Cargo config requires explicit policy review")
     manifests = sorted(root.glob("crates/*/Cargo.toml"))

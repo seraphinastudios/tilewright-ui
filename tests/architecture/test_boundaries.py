@@ -90,6 +90,23 @@ class Boundaries(unittest.TestCase):
                 (self.root / "Cargo.toml").write_text(f'[workspace.dependencies]\ntilewright-render-sdl3 = "{previous}"\n')
                 self.assertTrue(any("must use =0.7.0" in e for e in POLICY.check(self.root)))
 
+    def test_wasm_bindgen_cli_matches_library_pin(self):
+        web = self.root / "examples/web"
+        web.mkdir(parents=True)
+        (web / "build.sh").write_text("if [[ \"$actual\" != 'wasm-bindgen 0.2.127' ]]; then\n")
+        (web / "README.md").write_text("Use wasm-bindgen 0.2.127 and Python 3.\n")
+        (self.root / "Cargo.toml").write_text('[workspace.dependencies]\nwasm-bindgen = "=0.2.127"\n')
+        self.assertEqual(POLICY.check(self.root), [])
+        (self.root / "Cargo.toml").write_text('[workspace.dependencies]\nwasm-bindgen = "=0.2.128"\n')
+        errors = POLICY.check(self.root)
+        for name in ("examples/web/build.sh", "examples/web/README.md"):
+            with self.subTest(name=name):
+                self.assertIn(f"{name}: wasm-bindgen CLI 0.2.127 must equal the workspace pin 0.2.128", errors)
+        (web / "build.sh").write_text("cargo build\n")
+        (web / "README.md").write_text("Use wasm-bindgen 0.2.128.\n")
+        self.assertEqual(POLICY.check(self.root),
+                         ["examples/web/build.sh: must name the wasm-bindgen 0.2.128 CLI"])
+
 
 if __name__ == "__main__":
     unittest.main()
