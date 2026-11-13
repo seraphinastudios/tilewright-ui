@@ -75,20 +75,20 @@ class Boundaries(unittest.TestCase):
         self.assertTrue(any("forbidden edge" in e for e in POLICY.check(self.root)))
 
     def test_renderer_recovery_cohort_is_pinned(self):
-        self.add('\n[dependencies]\ntilewright-scene = "=0.7.0"\n', "tilewright-ui-render")
+        self.add('\n[dependencies]\ntilewright-scene = "=0.7.1"\n', "tilewright-ui-render")
         self.assertEqual(POLICY.check(self.root), [])
         path = self.root / "crates/tilewright-ui-render/Cargo.toml"
         current = path.read_text()
-        for previous in ("=0.6.1", "=0.6.2", "=0.6.3"):
+        for previous in ("=0.6.1", "=0.6.2", "=0.6.3", "=0.7.0"):
             with self.subTest(previous=previous):
-                path.write_text(current.replace("=0.7.0", previous))
-                self.assertTrue(any("must retain =0.7.0" in e for e in POLICY.check(self.root)))
+                path.write_text(current.replace("=0.7.1", previous))
+                self.assertTrue(any("must retain =0.7.1" in e for e in POLICY.check(self.root)))
 
     def test_unused_workspace_renderer_pin_is_checked(self):
-        for previous in ("=0.6.1", "=0.6.2", "=0.6.3"):
+        for previous in ("=0.6.1", "=0.6.2", "=0.6.3", "=0.7.0"):
             with self.subTest(previous=previous):
                 (self.root / "Cargo.toml").write_text(f'[workspace.dependencies]\ntilewright-render-sdl3 = "{previous}"\n')
-                self.assertTrue(any("must use =0.7.0" in e for e in POLICY.check(self.root)))
+                self.assertTrue(any("must use =0.7.1" in e for e in POLICY.check(self.root)))
 
     def test_wasm_bindgen_cli_matches_library_pin(self):
         web = self.root / "examples/web"

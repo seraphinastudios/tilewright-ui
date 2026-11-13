@@ -14,7 +14,7 @@ RENDERER = {f"tilewright-{name}" for name in (
     "scene", "render-ui", "render-api", "render-resources", "render-world",
     "render-testkit", "render-wgpu", "render-sdl3")}
 # The renderer crates release as one cohort; every edge pins this exact version.
-RENDERER_VERSION = "=0.7.0"
+RENDERER_VERSION = "=0.7.1"
 ALLOWED = {
     "tilewright-ui": {"unicode-segmentation"},
     "tilewright-app": {"tilewright-ui"},

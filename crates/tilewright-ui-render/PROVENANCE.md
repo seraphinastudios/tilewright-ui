@@ -1,6 +1,6 @@
 # Renderer adapter provenance
 
-The adapter targets `tilewright-render-ui =0.7.0` directly for shaping, bidi,
+The adapter targets `tilewright-render-ui =0.7.1` directly for shaping, bidi,
 grapheme geometry, rasterization and immutable ATX1 resources. It contains no
 second text engine. Font bytes remain explicit caller-owned inputs; no font
 assets, font discovery or downloads are included.
