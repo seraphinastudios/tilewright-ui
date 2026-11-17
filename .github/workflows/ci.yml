@@ -8,8 +8,8 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  source:
-    name: Source checks
+  linux:
+    name: Linux checks
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -33,3 +33,50 @@ jobs:
         run: bash tools/check-c-host.sh
       - name: Browser adapter compile
         run: cargo check --locked --package tilewright-ui-web --target wasm32-unknown-unknown
+  windows:
+    # The three crates planned for crates.io are pure Rust and must build on
+    # Windows, where the editor and renderer also ship. The C, SDL and browser
+    # proofs stay on Linux.
+    name: Windows checks
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt \
+            --target wasm32-unknown-unknown
+          rustup run 1.97.1 rustc --version
+      - name: Prepare exact licensed font pack outside source
+        run: |
+          font_root="${RUNNER_TEMP}/tilewright-ui-fonts"
+          python tools/prepare-fonts.py "$font_root" --acquire
+          printf 'TILEWRIGHT_UI_FONT_ROOT=%s\n' "$font_root" >> "$GITHUB_ENV"
+      - name: Test the publishable crates
+        run: |
+          packages=(-p tilewright-ui -p tilewright-app -p tilewright-ui-render)
+          cargo test --locked "${packages[@]}" --all-targets --all-features
+          cargo test --locked "${packages[@]}" --doc --all-features
+          cargo clippy --locked "${packages[@]}" --all-targets --all-features -- -D warnings
+  source:
+    # The required status. It passes only when every platform job passed, so a
+    # failed, cancelled or skipped leg fails it.
+    name: Source checks
+    if: always()
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every platform job to pass
+        env:
+          LINUX: ${{ needs.linux.result }}
+          WINDOWS: ${{ needs.windows.result }}
+        run: |
+          printf 'Linux checks: %s\nWindows checks: %s\n' "$LINUX" "$WINDOWS"
+          test "$LINUX" = success
+          test "$WINDOWS" = success
