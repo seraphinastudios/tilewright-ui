@@ -15,9 +15,26 @@ C/SDL and browser hosts. A broader widget catalog follows real consumer needs.
 3. Qualify all three hosts with actual rendering and input. C ABI compilation,
    Rust tests and browser boundary tests are necessary but do not establish OS
    IME, accessibility or a complete application integration by themselves.
-4. Publish the UI family only after its renderer dependencies, packaged graph,
-   licensing and supported-host evidence are verified. C library/header release
-   compatibility is separate from Rust package versioning.
+4. Publish `tilewright-ui`, `tilewright-app` and `tilewright-ui-render` at
+   `0.1.0` once their packaged graph, licensing and supported-host evidence are
+   verified (see [the release plan](RELEASES.md)). The C facade stays
+   unpublished; C library/header release compatibility is separate from Rust
+   package versioning.
+
+## Steps toward the first publication
+
+1. Bring the repository current: crate metadata and READMEs, documentation,
+   and Windows in CI for the three crates.
+2. Move the editor's text rules into the shared crates (U+2028 and U+2029
+   rejection, markers for stored line breaks) and let the shared renderer
+   borrow the host's font system instead of loading its own. Nothing is
+   published yet, so these may still change public APIs.
+3. Release readiness: release and publish workflows modelled on
+   `tilewright-world`, release notes and the owner's first-publication
+   checklist. The owner then publishes the first versions and adds trusted
+   publishers.
+4. The Tilewright editor adopts the shared field for one string field in its
+   inspector, opt-in at first.
 
 ## Consumer responsibilities
 
@@ -36,11 +53,13 @@ names need not change merely to adopt common widgets.
 
 ## Migration order
 
-- Use the separately reviewed renderer `0.7.1` successor. UI/app packages use
-  their own future version sequence and preserve earlier immutable artifacts.
+- Use the renderer crates pinned at `0.7.1`. The UI crates have their own
+  version sequence and preserve earlier immutable artifacts. Once the editor
+  depends on them, a renderer update moves through the renderer, then this
+  repository, then the editor.
 - Prove the shared chat/input/modal slice in standalone hosts.
-- Adopt one editor string inspector control without changing document or
-  transaction authority. Retain existing regression and native acceptance
+- Adopt one editor string inspector control, after the first publication,
+  without changing document or transaction authority. Retain existing regression and native acceptance
   coverage. In parallel, add one optional local-echo chat panel to the C/SDL
   game client through its existing widget/event/deinit hooks.
   Keep its single presenter, layering, coordinate and privacy contracts. Compare
