@@ -4,8 +4,12 @@ description = "Headless shared widget and text interaction for Tilewright"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+keywords = ["tilewright", "ui", "widgets", "text-input", "ime"]
+categories = ["gui", "text-editing", "game-development"]
 version.workspace = true
 publish = false
 

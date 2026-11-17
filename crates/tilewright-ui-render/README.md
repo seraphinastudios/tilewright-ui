@@ -1,4 +1,23 @@
-# Shared renderer adapter
+# tilewright-ui-render
+
+Draws `tilewright-ui` widgets through the Tilewright renderer crates, pinned
+at exactly `0.7.1`. It reuses the renderer's text shaping, glyph resources and
+drawing; it does not add a text engine of its own. See the
+[repository](https://github.com/seraphinastudios/tilewright-ui) for the
+architecture and the examples.
+
+## Status
+
+This is a 0.x prototype. Its API is not stable, and the crate is not yet
+published to crates.io. It shares one version with `tilewright-ui` and
+`tilewright-app`. While they are at 0.x, a breaking change to a public API, or
+a move to the renderer's next minor version, takes the next minor version;
+anything else takes the next patch version.
+
+Licensed under the MIT license. Fonts are separate data under their own
+licences; this crate contains none and never searches for system fonts.
+
+## Usage
 
 `UiRenderer::compile(&prepared.snapshot, &prepared.layout, physical_size)`
 translates the exact neutral `tilewright-ui::Layout` retained by the app.
