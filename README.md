@@ -20,9 +20,9 @@ version. While they are at 0.x, a breaking change to a public API, or a move to
 the renderer's next minor version, takes the next minor version; anything else
 takes the next patch version. The C facade stays unpublished; its library and
 header are a separate track. Native and web host adapters are unpublished
-workspace examples. Existing
-`tilewright-render-ui` remains the lower-level drawing and typography library;
-this repository does not replace it or its independent releases.
+workspace examples. Existing `tilewright-render-ui` remains the lower-level
+drawing and typography library; this repository does not replace it or its
+independent releases.
 
 Read the [architecture](docs/ARCHITECTURE.md), [interaction contract](docs/CONTRACT.md)
 and [adoption roadmap](docs/ROADMAP.md), plus the separate
@@ -38,8 +38,8 @@ family published from renderer source release `v1.27.0`. The committed
 `Cargo.lock` resolves registry packages only, and Dependabot proposes
 dependency and Actions updates weekly. CI runs on GitHub-hosted runners: Linux
 runs every check below, and Windows tests the three planned crates. The
-required status `Source checks` passes only when both pass. Before checks, prepare the
-separately licensed font data outside the checkout:
+required status `Source checks` passes only when both pass. Before checks,
+prepare the separately licensed font data outside the checkout:
 
 ```sh
 python3 tools/prepare-fonts.py /absolute/private/font-pack --acquire

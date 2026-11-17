@@ -59,8 +59,8 @@ names need not change merely to adopt common widgets.
   repository, then the editor.
 - Prove the shared chat/input/modal slice in standalone hosts.
 - Adopt one editor string inspector control, after the first publication,
-  without changing document or transaction authority. Retain existing regression and native acceptance
-  coverage. In parallel, add one optional local-echo chat panel to the C/SDL
+  without changing document or transaction authority. Retain existing
+  regression and native acceptance coverage. In parallel, add one optional local-echo chat panel to the C/SDL
   game client through its existing widget/event/deinit hooks.
   Keep its single presenter, layering, coordinate and privacy contracts. Compare
   primitive submission with a bounded renderer-produced overlay before choosing
