@@ -9,17 +9,35 @@ mod keys;
 mod text;
 use keys::KeyLedger;
 pub use text::{
-    CompositionSnapshot, TextAffinity, TextCursor, TextInput, TextInputSnapshot, TextSelection,
-    scalar_selection_bytes,
+    CONTROL_MARKER, CompositionSnapshot, DisplayMarker, LINE_BREAK_MARKER, PARAGRAPH_MARKER,
+    TAB_MARKER, TextAffinity, TextCursor, TextInput, TextInputSnapshot, TextSelection,
+    mark_stored_breaks, refuses_single_line, scalar_selection_bytes,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum UiError {
     InvalidInput,
     LimitExceeded,
+    /// New text holds a character a single-line field never accepts (see
+    /// [`refuses_single_line`]). Checked before the byte budget.
+    RefusedText,
     QueueFull,
     Stale,
     Exhausted,
+}
+impl UiError {
+    /// Every variant, so other crates can test their mappings completely.
+    /// The test below breaks when a variant is added; add it here too.
+    #[doc(hidden)]
+    pub const ALL: [UiError; 6] = [
+        UiError::InvalidInput,
+        UiError::LimitExceeded,
+        UiError::RefusedText,
+        UiError::QueueFull,
+        UiError::Stale,
+        UiError::Exhausted,
+    ];
 }
 impl std::fmt::Display for UiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -633,7 +651,11 @@ impl Ui {
                 if self.composition == Composition::SingleField {
                     return Err(UiError::InvalidInput);
                 }
-                if text.len() > self.limits.message_bytes || text.chars().any(char::is_control) {
+                // One history row is one line: no line or paragraph separators.
+                if text.chars().any(refuses_single_line) {
+                    return Err(UiError::RefusedText);
+                }
+                if text.len() > self.limits.message_bytes {
                     return Err(UiError::LimitExceeded);
                 }
                 while self.history.len() >= self.limits.history_messages
@@ -1155,6 +1177,28 @@ fn embedded_layout(
         hits,
         composer_bounds: snapshot.composer_visible.then_some(composer),
     })
+}
+
+#[cfg(test)]
+mod error_list_tests {
+    use super::UiError;
+
+    #[test]
+    fn every_error_variant_is_listed_once_in_order() {
+        // No wildcard: a new variant fails to compile here until it has a
+        // position, and then the assertions need it in `ALL`.
+        let position = |error: UiError| match error {
+            UiError::InvalidInput => 0,
+            UiError::LimitExceeded => 1,
+            UiError::RefusedText => 2,
+            UiError::QueueFull => 3,
+            UiError::Stale => 4,
+            UiError::Exhausted => 5,
+        };
+        for (index, error) in UiError::ALL.into_iter().enumerate() {
+            assert_eq!(position(error), index);
+        }
+    }
 }
 
 #[cfg(test)]

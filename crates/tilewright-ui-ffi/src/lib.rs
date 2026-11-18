@@ -29,6 +29,8 @@ pub const WRONG_THREAD: u32 = 9;
 pub const REENTRANT: u32 = 10;
 pub const POISONED: u32 = 11;
 pub const INTERNAL_PANIC: u32 = 12;
+// 13 is TWUI_RENDER_ERROR, returned by the render module.
+pub const REFUSED_TEXT: u32 = 14;
 
 type Result<T> = std::result::Result<T, u32>;
 
@@ -331,9 +333,12 @@ fn ui_error(error: tilewright_ui::UiError) -> u32 {
     match error {
         InvalidInput => INVALID_ARGUMENT,
         LimitExceeded => LIMIT_EXCEEDED,
+        RefusedText => REFUSED_TEXT,
         QueueFull => QUEUE_FULL,
         Stale => STALE,
         Exhausted => EXHAUSTED,
+        // UiError is non_exhaustive; a new variant needs its own C status.
+        _ => INVALID_ARGUMENT,
     }
 }
 fn app_error(error: tilewright_app::AppError) -> u32 {
@@ -1013,6 +1018,23 @@ pub unsafe extern "C" fn twui_scroll_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_ui_error_has_its_own_c_status() {
+        // `ui_error` needs a wildcard arm (UiError is non_exhaustive); this
+        // keeps that arm from hiding a missed mapping.
+        let mut seen = std::collections::BTreeSet::new();
+        for error in tilewright_ui::UiError::ALL {
+            let status = ui_error(error);
+            if error == tilewright_ui::UiError::InvalidInput {
+                assert_eq!(status, INVALID_ARGUMENT);
+            } else {
+                assert_ne!(status, INVALID_ARGUMENT, "{error:?}");
+            }
+            assert!(seen.insert(status), "{error:?} shares status {status}");
+        }
+        assert_eq!(ui_error(tilewright_ui::UiError::RefusedText), REFUSED_TEXT);
+    }
 
     #[test]
     fn panic_poison_and_reentry_are_fenced() {
