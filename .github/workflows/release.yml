@@ -85,6 +85,9 @@ jobs:
           fi
           { echo '### Release plan'; echo; echo '```json'; jq . "${plan}"; echo '```'; } >>"${GITHUB_STEP_SUMMARY}"
           echo "::notice title=Release plan::$(jq -r .reason "${plan}")"
+          if [[ $(jq -r .crate_changed "${plan}") == true ]]; then
+            echo "::notice title=Crate content changed::packaged crate content changed since $(jq -r .crate_owner_tag "${plan}"), which owns crate version $(jq -r .crate_version "${plan}"). It reaches crates.io only with the next crate version (docs/RELEASING.md)."
+          fi
           if [[ ${EVENT} == pull_request ]]; then
             # A check build under a version that is never released.
             echo "release=false"

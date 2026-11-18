@@ -15,12 +15,15 @@ name: Publish crates
 #   CRATES_IO_FIRST_PUBLICATION_TOKEN, only for crate names crates.io lacks.
 #   The owner deletes the secret and revokes the token afterwards.
 #
-# Both verify first, without credentials: the release is immutable, its
-# .crate assets match SHA256SUMS, GitHub's digests and build provenance from
-# release.yml on main at the tagged commit, and packaging that commit again
-# gives the same bytes. Each upload is `cargo publish --no-verify`, which
-# packages those same bytes and builds nothing; afterwards crates.io's
-# index must list the attested checksums. With nothing left to upload, a
+# Both verify first, without credentials, for operation verify too, so a
+# dry run proves everything but the token and the upload: the environment
+# admits only main, the release is immutable, its .crate assets match
+# SHA256SUMS, GitHub's digests and build provenance from release.yml on main
+# at the tagged commit, and packaging that commit again gives the same bytes.
+# Each upload is `cargo publish --no-verify`, which packages again and builds
+# nothing; afterwards crates.io's index must list the attested checksums. A
+# difference that appears only at upload time is therefore found only once
+# the version is public (docs/RELEASING.md). With nothing left to upload, a
 # publish run with trusted publishing only exchanges the token: a canary.
 
 on:
@@ -62,8 +65,10 @@ jobs:
     if: github.repository == 'seraphinastudios/tilewright-ui' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # actions: read for the environment API, which GitHub files under Actions.
     permissions:
       contents: read
+      actions: read
       attestations: read
     outputs:
       owner: ${{ steps.verify.outputs.owner }}
@@ -96,6 +101,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: read
       attestations: read
       id-token: write
     steps:

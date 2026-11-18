@@ -91,6 +91,17 @@ def ownership(revision, tag, previous, root="."):
     return {"crate_version": text(version), "crate_owner": False, "crate_owner_tag": owner}
 
 
+# What reaches a crate's users: each crate's packaged files (not its tests)
+# and what Cargo packages from the workspace.
+PACKAGED = ("Cargo.toml", "Cargo.lock", "LICENSE", *(f"crates/{name}" for name in CRATES),
+            *(f":(exclude)crates/{name}/tests" for name in CRATES))
+
+
+def crate_changed(owner_tag, revision, root="."):
+    """Whether packaged content changed since the release that owns the crate version."""
+    return bool(git("diff", "--name-only", owner_tag, revision, "--", *PACKAGED, root=root).strip())
+
+
 def plan(revision, event, root="."):
     previous = previous_tag(revision, root)
     result = {"revision": git("rev-parse", revision, root=root).strip(), "previous_tag": previous}
@@ -110,8 +121,10 @@ def plan(revision, event, root="."):
         version = (major, minor + 1, 0)
         reason = f"{len(messages)} commit(s) since {previous}."
     tag = "v" + text(version)
+    owner = ownership(revision, tag, previous, root)
+    changed = not owner["crate_owner"] and crate_changed(owner["crate_owner_tag"], revision, root)
     return {**result, "release": True, "version": text(version), "tag": tag, "reason": reason,
-            **ownership(revision, tag, previous, root)}
+            **owner, "crate_changed": changed}
 
 
 def check_version(base, root="."):

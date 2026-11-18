@@ -93,7 +93,8 @@ reservation.
    revision. Report platform and accessibility limits explicitly.
 3. Verify standalone crate contents (`cargo package --list` shows each crate's
    sources, README, `LICENSE` and, where present, `PROVENANCE.md`), licenses,
-   provenance, dependency order, checksums and SBOMs. Font bytes remain separate licensed data with their
+   provenance, dependency order and checksums. Releases carry no SBOM yet; one would be
+   separate future work. Font bytes remain separate licensed data with their
    original notices; no application/game content enters the packages.
 4. Cut a source release (`release.yml`). C headers and native library assets are a separate,
    later track. Rust package versions and the C ABI version have distinct

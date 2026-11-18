@@ -31,8 +31,9 @@ version, the C library or a web package needs her approval first.
   based. Development overrides stay outside committed manifests/config/locks.
 - Releases and crates.io uploads run only through `release.yml` and
   `publish-crate.yml`. Agents never publish, run `cargo publish` or
-  `cargo login`, create tokens, dispatch publication or change environments
-  and trusted publishers; those are owner steps (`docs/CRATE-FIRST-PUBLICATION.md`).
+  `cargo login`, create tokens, dispatch the Release or Publish crates
+  workflows, create `v*` tags, or change environments and trusted
+  publishers; those are owner steps (`docs/CRATE-FIRST-PUBLICATION.md`).
   Released tags and assets are immutable; fix forward with a new version.
 
 Use owned worktrees and preserve other workers' edits. Every PR opens as draft,

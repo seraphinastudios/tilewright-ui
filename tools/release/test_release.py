@@ -107,6 +107,24 @@ class Plan(Repository):
         previous = release.previous_tag(revision, self.root, below=(0, 2, 0))
         self.assertTrue(release.ownership(revision, "v0.2.0", previous, self.root)["crate_owner"])
 
+    def test_changed_crate_content_without_a_bump_is_reported(self):
+        self.commit("feat: start")
+        self.git("tag", "v0.1.0")
+        self.commit("docs: nothing packaged")
+        self.assertFalse(self.plan()["crate_changed"])
+        source = self.root / "crates/tilewright-app/tests"
+        source.mkdir(parents=True)
+        (source / "t.rs").write_text("")
+        self.git("add", ".")
+        self.commit("test: only tests")
+        self.assertFalse(self.plan()["crate_changed"])
+        (self.root / "crates/tilewright-app/lib.rs").write_text("")
+        self.git("add", ".")
+        self.commit("feat: packaged change")
+        self.assertTrue(self.plan()["crate_changed"])
+        self.commit("feat: bump", version="0.1.1")
+        self.assertFalse(self.plan()["crate_changed"])
+
     def test_lower_crate_version_stops_the_plan(self):
         self.commit("feat: start", version="0.2.0")
         self.git("tag", "v0.1.0")

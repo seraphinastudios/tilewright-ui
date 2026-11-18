@@ -2,21 +2,28 @@
 
 This is the owner's one-time checklist for putting `tilewright-ui`,
 `tilewright-app` and `tilewright-ui-render` on crates.io at 0.1.0. Every step
-works from a phone browser or a laptop browser; nothing needs Rust, a terminal
-or a login on the build machine. After it, releases publish new versions
-automatically through trusted publishing ([RELEASING.md](RELEASING.md)).
+works from a phone browser; nothing needs Rust, a terminal or a login on the
+build machine. After it, releases publish new versions automatically through
+trusted publishing ([RELEASING.md](RELEASING.md)).
 
 Why a token at all: crates.io's trusted publishing only publishes new
 versions of crates that already exist ("initial publish requires an API
 token", [crates.io docs](https://crates.io/docs/trusted-publishing), checked
-2026-11-18). So the first version of each name is uploaded once with a
+2026-11-18). So the first version of each name goes up once with a
 short-lived token that you create, that lives in GitHub for a few minutes as
 an environment secret, and that you then delete and revoke. The workflow that
-uses it is the same one that later publishes with trusted publishing, and it
-uploads the exact bytes the release attested.
+uses it is the one that later publishes with trusted publishing. It packages
+the release's tagged commit again, refuses to upload unless that gives exactly
+the files the release recorded (their *checksums*, a fingerprint of each
+file), and compares crates.io's checksums with them afterwards.
 
 Three new names fit crates.io's new-crate limit (5 at once, then 1 per 10
 minutes), so all three go up in one run.
+
+**Until this checklist is done, leave the crate version at 0.1.0**: do not
+merge a pull request that changes `version` in the root `Cargo.toml`. A
+release that owns a newer crate version before step 9 is not published
+automatically (step 10 covers it if it happens).
 
 ## Never
 
@@ -25,24 +32,20 @@ minutes), so all three go up in one run.
   environment secret in step 5.
 - Never store it as a repository or organization secret, and never give it
   the `publish-update` scope or a wildcard crate pattern.
-- Never delete, move or recreate a `v*` tag or edit a release.
+- Never create, delete or move a `v*` tag by hand, and never edit a release.
 - Do not tick "Allow administrators to bypass" on the environment.
 
-## 1. Before merging
+## 1. Merge
 
-1. Merge #13 (renderer 0.7.2) first; this pull request contains its commit.
-2. On this pull request, check that **Source checks** is green.
-
-## 2. Merge
-
-Squash-merge this pull request as usual.
+On this pull request, check that **Source checks** is green, then
+squash-merge it as usual.
 
 **You should see:** in the Actions tab, a **Release** run on `main` whose only
 job, **Plan release**, is green with the note "No release exists yet. A merge
 never cuts the first release". Nothing is tagged or published, and **CI** on
 `main` is green.
 
-## 3. Create the release environment
+## 2. Create the release environment
 
 GitHub, `seraphinastudios/tilewright-ui`, **Settings**, **Environments**,
 **New environment**.
@@ -53,31 +56,58 @@ GitHub, `seraphinastudios/tilewright-ui`, **Settings**, **Environments**,
 4. **Deployment branches and tags**: choose **Selected branches and tags**,
    **Add deployment branch or tag rule**, Ref type **Branch**, pattern
    `main`, **Add rule**. There must be exactly this one rule.
-5. **Save protection rules**. Add no variables.
+5. **Save protection rules**. Add no secrets or variables yet.
 
-**Check:** the Environments page lists `crates-io-release` with "1 branch
-allowed" (or open it and see the single rule `main`).
+**Check:** open the environment and see the single rule `main`. Step 4
+checks the rest by machine.
 
-## 4. Cut the first release
+## 3. Cut the first release
 
 **Actions**, **Release**, **Run workflow**, branch `main`, **Run workflow**.
 
 **You should see** (about 10 minutes): a green run, and under **Releases** a
-release `v0.1.0` with five assets: `tilewright-ui-0.1.0.crate`,
+release `v0.1.0` with five files: `tilewright-ui-0.1.0.crate`,
 `tilewright-app-0.1.0.crate`, `tilewright-ui-render-0.1.0.crate`,
 `tilewright-ui-0.1.0-source.tar.gz` and `SHA256SUMS`. Its last job, **Start
 crate publication**, says "First publication pending: crates.io has no crate
 named tilewright-ui tilewright-app tilewright-ui-render yet".
 
+If the run shows **Cancelled** (a merge started its own run meanwhile), run
+it again the same way.
+
+## 4. Dry run, before any token exists
+
+**Actions**, **Publish crates**, **Run workflow**: branch `main`, operation
+`verify`, credential `first-publication-token`, release_tag `v0.1.0`.
+
+**You should see** (about 3 minutes): one green job, **Verify the release's
+crate archives**, whose summary says:
+
+- "v0.1.0 owns crate version 0.1.0; to upload, in order: tilewright-ui
+  tilewright-app tilewright-ui-render"
+- "Checked: the environment crates-io-release admits only main, with no
+  administrator bypass."
+- "Checked: SHA256SUMS, GitHub's asset digests and build provenance from
+  release.yml on main." (*Build provenance* is GitHub's signed record of
+  which workflow built each file.)
+- "Checked: packaging v0.1.0 again on this runner gives the attested bytes."
+- "Not tested by a verify run: the crates.io token, its exchange and the
+  upload."
+
+That proves everything except the token and the upload. **If it is red**, read
+its error: an environment error means step 2 is not as described (fix it and
+run step 4 again); anything else, stop and ask (below). Do not go on to step 5
+until step 4 is green.
+
 ## 5. Create the short-lived token and store it
 
 1. On crates.io, **Log in with GitHub** as `zoeyrose`. **Account Settings**,
    **API Tokens**, **New Token**.
-2. Name: `tilewright-ui first publication`. Expiration: **Custom**, tomorrow's
-   date.
+2. Name: `tilewright-ui first publication`. Expiration: **Custom...**,
+   tomorrow's date.
 3. Scopes: tick **publish-new** only.
-4. Crates: add the three patterns `tilewright-ui`, `tilewright-app`,
-   `tilewright-ui-render` (each exactly, no `*`).
+4. Crates: with **Add pattern**, add the three patterns `tilewright-ui`,
+   `tilewright-app`, `tilewright-ui-render` (each exactly, no `*`).
 5. **Generate Token**, then copy it. crates.io shows it only once.
 6. In GitHub, **Settings**, **Environments**, `crates-io-release`,
    **Environment secrets**, **Add environment secret**. Name:
@@ -85,36 +115,37 @@ named tilewright-ui tilewright-app tilewright-ui-render yet".
 
 ## 6. Publish the first versions
 
-**Actions**, **Publish crates**, **Run workflow**: branch `main`, operation
-`publish`, credential `first-publication-token`, release_tag `v0.1.0`.
+Right away: **Actions**, **Publish crates**, **Run workflow**: branch `main`,
+operation `publish`, credential `first-publication-token`, release_tag
+`v0.1.0`.
 
-**You should see** (about 5 minutes): **Verify the release's crate archives**
-green with "v0.1.0 owns crate version 0.1.0; to upload, in order:
-tilewright-ui tilewright-app tilewright-ui-render", then **Publish to
-crates.io** green, its last step saying "crates.io lists tilewright-ui,
-tilewright-app, tilewright-ui-render at 0.1.0 with the attested checksums".
+**You should see** (about 5 minutes): the verify job green as in step 4, then
+**Publish to crates.io** green, its last step saying "crates.io lists
+tilewright-ui, tilewright-app, tilewright-ui-render at 0.1.0 with the attested
+checksums".
 
 **Check:** https://crates.io/crates/tilewright-ui,
 https://crates.io/crates/tilewright-app and
 https://crates.io/crates/tilewright-ui-render each show version 0.1.0 and
 owner `zoeyrose`.
 
-**If it fails:** nothing is wrong with `main`. Read the red step's error:
+**If it fails:** `main` and the release are unchanged. Read the red step's
+error:
 
 | Error says | Do |
 | --- | --- |
-| the environment `crates-io-release` is missing or must admit only main | Fix step 3, run step 6 again |
-| no crates.io token | The secret's name or place is wrong (environment secret, exact name); fix step 5.6, run again |
-| a 403 or "unauthorized" from crates.io | The token's scope or crate patterns are wrong; delete it, redo step 5, run again |
-| 429 "too many new crates" | Wait 10 minutes per missing crate, run again; it uploads only what is missing |
-| anything else, or "other bytes" | Stop. Delete the secret and revoke the token (step 7) and ask (below) |
+| no crates.io token | The secret's name or place is wrong (environment secret, exact name); fix step 5.6, run step 6 again |
+| a 403 or "unauthorized" from crates.io | The token's scope or crate patterns are wrong: delete the secret, revoke the token, redo step 5, run again |
+| 429 "too many new crates" | Wait 10 minutes per missing crate, run again |
+| "gave up waiting for crates.io's index" | The uploads that succeeded are published. Wait 10 minutes and run step 6 again: it uploads only what is missing and checks the rest |
+| anything else, or "other bytes" | Stop. Do step 7 now and ask (below) |
 
 Running step 6 again is safe: it uploads only the crates crates.io still
 lacks, and refuses names that already exist.
 
 ## 7. Remove the token
 
-Do both, right after step 6 succeeds (or when you give up):
+Both, right after step 6 succeeds (or when you stop):
 
 1. GitHub, `crates-io-release`, **Environment secrets**: delete
    `CRATES_IO_FIRST_PUBLICATION_TOKEN`.
@@ -126,24 +157,24 @@ Do both, right after step 6 succeeds (or when you give up):
 ## 8. Add a trusted publisher to each crate
 
 For each of `tilewright-ui`, `tilewright-app` and `tilewright-ui-render`: on
-crates.io, the crate's page, **Settings**, **Trusted Publishing**, **Add**,
-**GitHub**, and enter exactly:
+crates.io, open the crate's page, **Settings**, **Trusted Publishing**,
+**Add**. Publisher **GitHub**, then exactly:
 
 | Field | Value |
 | --- | --- |
 | Repository owner | `seraphinastudios` |
 | Repository name | `tilewright-ui` |
 | Workflow filename | `publish-crate.yml` |
-| Environment | `crates-io-release` |
+| Environment name (optional) | `crates-io-release`: fill it in even though it says optional; without it any branch could publish |
 
-Always fill in the environment: without it any branch could publish.
+**Add**.
 
-**Check:** in the same browser, open
-`https://crates.io/api/v1/trusted_publishing/github_configs?crate=NAME` for
-each name. Each lists exactly one config with `repository_owner`
-`seraphinastudios`, `repository_owner_id` `314492348`, `repository_name`
-`tilewright-ui`, `workflow_filename` `publish-crate.yml` and `environment`
-`crates-io-release`. Delete any other.
+**Check:** the crate's **Settings** page lists exactly one trusted publisher,
+showing Repository `seraphinastudios/tilewright-ui`, Workflow
+`publish-crate.yml` and Environment `crates-io-release`. Remove any other.
+(Optional, on a laptop:
+`https://crates.io/api/v1/trusted_publishing/github_configs?crate=NAME` shows
+the same as JSON, with `repository_owner_id` `314492348`.)
 
 ## 9. Prove trusted publishing
 
@@ -157,6 +188,13 @@ crates.io token** succeeded. That proves the environment, the workflow name
 and at least one trusted publisher; step 8's check covers the other two. If
 the exchange fails with "No Trusted Publishing config found", redo step 8.
 
+## 10. Only if a later release owns a newer crate version
+
+Normally skip this. If a release after `v0.1.0` was cut with a newer crate
+version before step 9 (its **Start crate publication** said "First publication
+pending" and names that version), run step 9 again with that release's tag:
+it uploads that version with trusted publishing.
+
 ## Done
 
 - crates.io shows the three crates at 0.1.0, owned by `zoeyrose`.
@@ -165,8 +203,8 @@ the exchange fails with "No Trusted Publishing config found", redo step 8.
 - The environment has no secret; crates.io lists no `tilewright-ui first
   publication` token.
 - Optional, after the first version that trusted publishing uploads: each
-  crate's **Settings**, **Trusted Publishing**, turn on **Require trusted
-  publishing for all new versions**.
+  crate's **Settings**, turn on **Require trusted publishing for all new
+  versions**.
 
 From then on, a pull request that bumps the crate version publishes the
 three crates when it merges.
@@ -175,7 +213,7 @@ three crates when it merges.
 
 Ask in the Tilewright coordinating session with the link to the red run.
 Do not paste the token there. A failed step leaves `main` and the release
-unchanged; only step 6 uploads anything, and only the release's own bytes.
+unchanged; only step 6 uploads anything.
 
 ## Alternative: a laptop terminal
 
@@ -184,6 +222,6 @@ With Rust installed through rustup, from a clean clone of the `v0.1.0` tag
 tilewright-ui && git checkout v0.1.0`): `cargo login` (paste the token at the
 prompt), then `cargo publish --locked -p tilewright-ui`, then the same for
 `tilewright-app` and `tilewright-ui-render`, then `cargo logout` and revoke the
-token. It needs a Rust toolchain on the laptop, builds there, and nothing
-checks that the uploads equal the release's attested `.crate` bytes, so step
-6 is preferred.
+token. It keeps the token off GitHub, but `cargo publish` builds every
+dependency on the laptop while the token is stored there, and nothing checks
+the uploads against the release's files. Steps 4 to 7 are preferred.
