@@ -341,7 +341,11 @@ pub unsafe extern "C" fn twui_move_visual(
             if snapshot.composition.is_some() {
                 return Err(STALE);
             }
-            let cursor = text.move_visual(snapshot.selection.focus, motion);
+            // The layout holds the marked display text; step past guards
+            // and map back to committed.
+            let cursor = snapshot
+                .step_visual(|cursor| text.move_visual(cursor, motion))
+                .map_err(ui_error)?;
             let selection = tilewright_ui::TextSelection {
                 anchor: if extend == 1 {
                     snapshot.selection.anchor
@@ -361,6 +365,114 @@ pub unsafe extern "C" fn twui_move_visual(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Committed caret positions after each of eight visual presses from
+    /// `start`, through `twui_move_visual` or (`old`) the earlier single
+    /// step that mapped one layout move straight back.
+    unsafe fn presses(
+        context: *mut Context,
+        value: &str,
+        start: usize,
+        motion: u32,
+        physical: u16,
+        old: bool,
+    ) -> Vec<tilewright_ui::TextCursor> {
+        use tilewright_ui::{Input, Key, KeyEvent, TextCursor, TextSelection};
+        let selection = TextSelection::caret(TextCursor::new(start));
+        // SAFETY: the caller passes a live context; locals outlive the calls.
+        unsafe {
+            assert_eq!(
+                with_context(context, |engine| {
+                    engine.bind_field(value).map_err(app_error)?;
+                    engine
+                        .apply(Input::Focus(Some(tilewright_ui::COMPOSER)))
+                        .map_err(app_error)?;
+                    let target = engine.ui().text_target().ok_or(STALE)?;
+                    engine
+                        .apply(Input::Selection { target, selection })
+                        .map_err(app_error)?;
+                    engine
+                        .apply(Input::Key(KeyEvent {
+                            physical,
+                            key: Key::Other,
+                            pressed: true,
+                            repeat: false,
+                            platform_composing: false,
+                        }))
+                        .map_err(app_error)?;
+                    Ok(())
+                }),
+                OK
+            );
+            let mut stamp = Stamp {
+                struct_size: size_of::<Stamp>() as u32,
+                reserved: 0,
+                surface: 0,
+                frame: 0,
+                geometry: 0,
+                ui_revision: 0,
+            };
+            let mut image = Image {
+                struct_size: size_of::<Image>() as u32,
+                width: 0,
+                height: 0,
+                stride: 0,
+                byte_length: 0,
+                stamp,
+            };
+            let mut positions = Vec::new();
+            for _ in 0..8 {
+                assert_eq!(twui_render_prepare_current(context, &mut image), OK);
+                stamp = image.stamp;
+                assert_eq!(twui_ack_presented(context, &stamp), OK);
+                if old {
+                    assert_eq!(
+                        with_context(context, |engine| {
+                            let stamp = stamp_from_c(stamp)?;
+                            let frame = engine
+                                .frames
+                                .iter()
+                                .find(|frame| frame.stamp == stamp)
+                                .ok_or(STALE)?;
+                            let text = frame.compiled.editable().ok_or(STALE)?;
+                            let snapshot = text.snapshot.as_ref().ok_or(STALE)?;
+                            let motion = if motion == 1 {
+                                tilewright_ui_render::VisualMotion::Left
+                            } else {
+                                tilewright_ui_render::VisualMotion::Right
+                            };
+                            let cursor = snapshot
+                                .committed_cursor(
+                                    text.move_visual(snapshot.display_selection.focus, motion),
+                                )
+                                .map_err(ui_error)?;
+                            let target = engine.ui().text_target().ok_or(STALE)?;
+                            engine
+                                .select_text(stamp, target, TextSelection::caret(cursor))
+                                .map_err(app_error)?;
+                            Ok(())
+                        }),
+                        OK
+                    );
+                } else {
+                    assert_eq!(
+                        twui_move_visual(context, &stamp, u32::from(physical), motion, 0),
+                        OK
+                    );
+                }
+                let mut focus = TextCursor::new(usize::MAX);
+                assert_eq!(
+                    with_context(context, |engine| {
+                        focus = engine.ui().snapshot().composer.selection.focus;
+                        Ok(())
+                    }),
+                    OK
+                );
+                positions.push(focus);
+            }
+            positions
+        }
+    }
 
     #[test]
     fn copied_fonts_pixels_and_geometry_keep_presentation_identity() {
@@ -664,6 +776,91 @@ mod tests {
             assert_eq!(twui_ack_presented(context, &second.stamp), OK);
             assert_eq!(twui_get_ime_rect(context, &second.stamp, &mut rect), OK);
             assert!(rect.x >= 170.0 && rect.x < 470.0);
+            // Visual movement runs on the marked display text and lands on
+            // committed positions: each step crosses one stored character.
+            assert_eq!(
+                with_context(context, |engine| {
+                    engine.bind_field("a\nbc").map_err(app_error)?;
+                    engine
+                        .apply(tilewright_ui::Input::Focus(Some(tilewright_ui::COMPOSER)))
+                        .map_err(app_error)?;
+                    engine
+                        .apply(tilewright_ui::Input::Key(tilewright_ui::KeyEvent {
+                            physical: 82,
+                            key: tilewright_ui::Key::Other,
+                            pressed: true,
+                            repeat: false,
+                            platform_composing: false,
+                        }))
+                        .map_err(app_error)?;
+                    Ok(())
+                }),
+                OK
+            );
+            for expected in [3, 2, 1, 0] {
+                assert_eq!(twui_render_prepare_current(context, &mut second), OK);
+                assert_eq!(twui_ack_presented(context, &second.stamp), OK);
+                assert_eq!(twui_move_visual(context, &second.stamp, 82, 1, 0), OK);
+                let mut focus = usize::MAX;
+                assert_eq!(
+                    with_context(context, |engine| {
+                        focus = engine.ui().snapshot().composer.selection.focus.byte;
+                        Ok(())
+                    }),
+                    OK
+                );
+                assert_eq!(focus, expected);
+            }
+            // Guarded markers: the old single step against step_visual.
+            // Values with RTL text trapped the caret at a guard for good.
+            for (index, (value, start, motion)) in [
+                ("\u{5d0}\n\u{301}\u{5d1}", 0, 1),
+                ("\u{5d0}\u{600}\n\u{5d1}", 0, 1),
+                ("a\n\u{301}b", 0, 2),
+                ("a\n\u{301}b", 5, 1),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let physical = 90 + 2 * index as u16;
+                let bytes = |cursors: Vec<tilewright_ui::TextCursor>| -> Vec<usize> {
+                    cursors.into_iter().map(|cursor| cursor.byte).collect()
+                };
+                let old = bytes(presses(context, value, start, motion, physical, true));
+                let new = bytes(presses(context, value, start, motion, physical + 1, false));
+                let end = if start == 0 { value.len() } else { 0 };
+                assert!(new.contains(&end), "{value:?} trapped: {new:?}");
+                for position in &old {
+                    assert!(new.contains(position), "{value:?}: {old:?} -> {new:?}");
+                }
+            }
+            // Without markers the extra step never fires: a move of the
+            // affinity alone at a direction boundary is a real stop.
+            {
+                use tilewright_ui::{TextAffinity::*, TextCursor};
+                let stop = |byte, affinity| TextCursor { byte, affinity };
+                for (index, (value, motion, visits)) in [
+                    (
+                        "a\u{5d0}b",
+                        2,
+                        vec![stop(1, Before), stop(1, After), stop(4, Before)],
+                    ),
+                    (
+                        "שלום 5 עולם",
+                        1,
+                        vec![stop(8, After), stop(10, Before), stop(10, After)],
+                    ),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let physical = 100 + 2 * index as u16;
+                    let old = presses(context, value, 0, motion, physical, true);
+                    let new = presses(context, value, 0, motion, physical + 1, false);
+                    assert_eq!(new, old, "{value:?}");
+                    assert!(new.windows(3).any(|w| w == visits), "{value:?}: {new:?}");
+                }
+            }
             assert_eq!(twui_destroy(context), OK);
         }
     }
