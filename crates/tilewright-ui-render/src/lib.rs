@@ -9,11 +9,14 @@
 mod resources;
 use std::{collections::HashSet, fmt, sync::Arc};
 use tilewright_render_resources::ResourceProvider;
-// The renderer types that this crate's constructors, methods and fields take
-// or return are re-exported, so the common path needs no direct renderer
-// dependency. The renderer's own `TextCursor` and `TextAffinity` are not: this
-// crate's API uses `tilewright_ui`'s types of those names. A host that calls
-// `UnicodeLayout`'s methods directly depends on `tilewright-render-ui` itself.
+// The root re-exports the renderer types needed to construct and drive
+// `UiRenderer`/`UiCompiler` and to read a layout. A host that composes its own
+// scene or reads frame internals (`SceneBundle`, `ResourceProvider`, `Quad`,
+// `UiViewport`, `TextError`, `tilewright_scene::Error`) uses the renderer
+// crates directly, at the same exact version. The renderer's own `TextCursor`
+// and `TextAffinity` are not re-exported: this crate's API uses
+// `tilewright_ui`'s types of those names, and `UnicodeLayout`'s methods take
+// the renderer's, from `tilewright-render-ui` directly.
 pub use tilewright_render_ui::TextSystem;
 pub use tilewright_render_ui::UiLimits;
 /// Verified font-pack metadata for explicit host loading; contains no font bytes.
@@ -69,6 +72,7 @@ impl From<tilewright_scene::Error> for Error {
 
 /// Logical geometry from the exact shared layout used to paint the glyphs.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct TextGeometry {
     pub widget: WidgetRef,
     pub layout: UnicodeLayout,
@@ -95,7 +99,9 @@ impl TextGeometry {
             .caret(renderer_cursor(snapshot.display_selection.focus))?;
         intersect(translated(caret, self.origin), self.clip)
     }
-    pub fn move_visual(
+    /// One raw layout step in display coordinates. It does not skip a
+    /// marker's guard; hosts use [`TextGeometry::step_caret`].
+    fn move_visual(
         &self,
         cursor: tilewright_ui::TextCursor,
         motion: VisualMotion,
@@ -458,10 +464,12 @@ impl UiCompiler {
 
 /// Can outlive the renderer and any of its later atlas revisions.
 pub struct CompiledFrame {
-    pub viewport: UiViewport,
-    pub quads: Vec<Quad>,
+    viewport: UiViewport,
+    quads: Vec<Quad>,
     pub text: Vec<TextGeometry>,
-    pub unsupported: usize,
+    // Unsupported renderer primitives; only the prototype tests read it.
+    #[cfg_attr(not(all(test, feature = "prototype")), allow(dead_code))]
+    unsupported: usize,
     resources: resources::Resources,
     namespace: Namespace,
 }

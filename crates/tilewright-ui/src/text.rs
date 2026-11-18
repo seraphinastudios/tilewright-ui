@@ -53,6 +53,7 @@ impl TextSelection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct CompositionSnapshot {
     pub text: String,
     /// Original committed selection; never updated by subsequent preedits.
@@ -66,6 +67,7 @@ pub struct CompositionSnapshot {
 /// One stored line break or control character (a CR LF pair counts as one)
 /// shown as a visible marker. Display only: the committed text keeps it.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct DisplayMarker {
     /// Its bytes in the text before marking: the committed text with any
     /// preedit spliced in.
@@ -78,6 +80,7 @@ pub struct DisplayMarker {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct TextInputSnapshot {
     /// The exact stored draft, stored line breaks and controls included.
     pub committed: String,

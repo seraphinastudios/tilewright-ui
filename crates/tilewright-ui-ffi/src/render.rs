@@ -365,15 +365,13 @@ mod tests {
     use super::*;
 
     /// Committed caret positions after each of eight visual presses from
-    /// `start`, through `twui_move_visual` or (`old`) the earlier single
-    /// step that mapped one layout move straight back.
+    /// `start` through `twui_move_visual`.
     unsafe fn presses(
         context: *mut Context,
         value: &str,
         start: usize,
         motion: u32,
         physical: u16,
-        old: bool,
     ) -> Vec<tilewright_ui::TextCursor> {
         use tilewright_ui::{Input, Key, KeyEvent, TextCursor, TextSelection};
         let selection = TextSelection::caret(TextCursor::new(start));
@@ -423,41 +421,10 @@ mod tests {
                 assert_eq!(twui_render_prepare_current(context, &mut image), OK);
                 stamp = image.stamp;
                 assert_eq!(twui_ack_presented(context, &stamp), OK);
-                if old {
-                    assert_eq!(
-                        with_context(context, |engine| {
-                            let stamp = stamp_from_c(stamp)?;
-                            let frame = engine
-                                .frames
-                                .iter()
-                                .find(|frame| frame.stamp == stamp)
-                                .ok_or(STALE)?;
-                            let text = frame.compiled.editable().ok_or(STALE)?;
-                            let snapshot = text.snapshot.as_ref().ok_or(STALE)?;
-                            let motion = if motion == 1 {
-                                tilewright_ui_render::VisualMotion::Left
-                            } else {
-                                tilewright_ui_render::VisualMotion::Right
-                            };
-                            let cursor = snapshot
-                                .committed_cursor(
-                                    text.move_visual(snapshot.display_selection.focus, motion),
-                                )
-                                .map_err(ui_error)?;
-                            let target = engine.ui().text_target().ok_or(STALE)?;
-                            engine
-                                .select_text(stamp, target, TextSelection::caret(cursor))
-                                .map_err(app_error)?;
-                            Ok(())
-                        }),
-                        OK
-                    );
-                } else {
-                    assert_eq!(
-                        twui_move_visual(context, &stamp, u32::from(physical), motion, 0),
-                        OK
-                    );
-                }
+                assert_eq!(
+                    twui_move_visual(context, &stamp, u32::from(physical), motion, 0),
+                    OK
+                );
                 let mut focus = TextCursor::new(usize::MAX);
                 assert_eq!(
                     with_context(context, |engine| {
@@ -811,21 +778,25 @@ mod tests {
             }
             // Guarded markers: the old single step against step_caret.
             // Values with RTL text trapped the caret at a guard for good.
-            for (index, (value, start, motion)) in [
-                ("\u{5d0}\n\u{301}\u{5d1}", 0, 1),
-                ("\u{5d0}\u{600}\n\u{5d1}", 0, 1),
-                ("a\n\u{301}b", 0, 2),
-                ("a\n\u{301}b", 5, 1),
+            // `old` is what the earlier single step (one raw layout step from
+            // `display_selection.focus`, mapped back with `committed_cursor`)
+            // visited over eight presses, recorded at 053a40d with the
+            // verified font pack and pinned here once that raw step stopped
+            // being public API.
+            for (index, (value, start, motion, old)) in [
+                ("\u{5d0}\n\u{301}\u{5d1}", 0, 1, [2, 5, 3, 3, 3, 3, 3, 3]),
+                ("\u{5d0}\u{600}\n\u{5d1}", 0, 1, [4, 4, 4, 4, 4, 4, 4, 4]),
+                ("a\n\u{301}b", 0, 2, [1, 2, 5, 5, 5, 5, 5, 5]),
+                ("a\n\u{301}b", 5, 1, [4, 1, 0, 0, 0, 0, 0, 0]),
             ]
             .into_iter()
             .enumerate()
             {
                 let physical = 90 + 2 * index as u16;
-                let bytes = |cursors: Vec<tilewright_ui::TextCursor>| -> Vec<usize> {
-                    cursors.into_iter().map(|cursor| cursor.byte).collect()
-                };
-                let old = bytes(presses(context, value, start, motion, physical, true));
-                let new = bytes(presses(context, value, start, motion, physical + 1, false));
+                let new: Vec<usize> = presses(context, value, start, motion, physical + 1)
+                    .into_iter()
+                    .map(|cursor| cursor.byte)
+                    .collect();
                 let end = if start == 0 { value.len() } else { 0 };
                 assert!(new.contains(&end), "{value:?} trapped: {new:?}");
                 for position in &old {
@@ -833,19 +804,42 @@ mod tests {
                 }
             }
             // Without markers the extra step never fires: a move of the
-            // affinity alone at a direction boundary is a real stop.
+            // affinity alone at a direction boundary is a real stop. `old` is
+            // what the earlier single raw layout step visited over eight
+            // presses, recorded at 053a40d with the verified font pack and
+            // pinned once that raw step stopped being public API.
             {
                 use tilewright_ui::{TextAffinity::*, TextCursor};
                 let stop = |byte, affinity| TextCursor { byte, affinity };
-                for (index, (value, motion, visits)) in [
+                for (index, (value, motion, old, visits)) in [
                     (
                         "a\u{5d0}b",
                         2,
+                        vec![
+                            stop(1, Before),
+                            stop(1, After),
+                            stop(4, Before),
+                            stop(4, Before),
+                            stop(4, Before),
+                            stop(4, Before),
+                            stop(4, Before),
+                            stop(4, Before),
+                        ],
                         vec![stop(1, Before), stop(1, After), stop(4, Before)],
                     ),
                     (
                         "שלום 5 עולם",
                         1,
+                        vec![
+                            stop(2, After),
+                            stop(4, After),
+                            stop(6, After),
+                            stop(8, After),
+                            stop(10, Before),
+                            stop(10, After),
+                            stop(11, After),
+                            stop(13, After),
+                        ],
                         vec![stop(8, After), stop(10, Before), stop(10, After)],
                     ),
                 ]
@@ -853,8 +847,7 @@ mod tests {
                 .enumerate()
                 {
                     let physical = 100 + 2 * index as u16;
-                    let old = presses(context, value, 0, motion, physical, true);
-                    let new = presses(context, value, 0, motion, physical + 1, false);
+                    let new = presses(context, value, 0, motion, physical + 1);
                     assert_eq!(new, old, "{value:?}");
                     assert!(new.windows(3).any(|w| w == visits), "{value:?}: {new:?}");
                 }

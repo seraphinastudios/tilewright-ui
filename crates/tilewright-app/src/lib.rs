@@ -40,6 +40,7 @@ pub struct PresentationStamp {
     pub ui_revision: UiRevision,
 }
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct PreparedFrame {
     pub stamp: PresentationStamp,
     pub snapshot: UiSnapshot,

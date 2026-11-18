@@ -26,6 +26,7 @@ fn key(ui: &mut Ui, key: Key, pressed: bool) -> Result<Disposition, UiError> {
             Key::SelectAll => 4,
             Key::Escape => 5,
             Key::Other => 6,
+            _ => 7,
         },
         pressed,
     )

@@ -64,15 +64,16 @@ public dependency, and `render_rgba` returns a `tilewright-render-api` type.
 Any release, a patch release included, may change or remove it. Do not enable
 it in a production consumer.
 
-The crate root re-exports the renderer types its constructors, methods and
-fields take or return (`TextSystem`, `TextLimits`, `UiLimits`, `FontPack`,
-`FontBlob`, `UnicodeLayout`, `VisualMotion` and `unicode_fonts`), so a host
-that only compiles and presents frames needs no direct renderer dependency.
-The renderer's own `TextCursor` and `TextAffinity` are not re-exported: this
-crate's API takes and returns `tilewright_ui::TextCursor`. A host that goes
-further (composing with its own `SceneBundle`, calling `UnicodeLayout`'s
-methods directly, or matching `Error::Text`) depends on the renderer crates
-itself, at the same exact version.
+The crate root re-exports the renderer types needed to construct and drive
+`UiRenderer`/`UiCompiler` and to read a layout: `TextSystem`, `TextLimits`,
+`UiLimits`, `FontPack`, `FontBlob`, `UnicodeLayout`, `VisualMotion` and
+`unicode_fonts`. A host that composes its own scene or reads frame internals
+uses the renderer crates directly, at the same exact version: `SceneBundle`,
+`ResourceProvider`, `Quad`, `UiViewport`, and the error payloads `TextError`
+and `tilewright_scene::Error`. The renderer's own `TextCursor` and
+`TextAffinity` are not re-exported: this crate's API takes and returns
+`tilewright_ui::TextCursor`, while `UnicodeLayout`'s methods take the
+renderer's, from `tilewright-render-ui` directly.
 
 Logical viewport dimensions must be integral. Supply physical dimensions
 explicitly; all paint clipping and DPI transformation happen in the existing

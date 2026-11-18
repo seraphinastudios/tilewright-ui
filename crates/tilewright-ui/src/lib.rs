@@ -88,6 +88,7 @@ impl Default for Limits {
 }
 /// Immutable selection of the widgets owned by one context.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum Composition {
     #[default]
     Demo,
@@ -107,6 +108,7 @@ pub enum Action {
     },
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct ActionBatch {
     pub id: BatchId,
     pub actions: Vec<Action>,
@@ -117,6 +119,7 @@ pub enum Disposition {
     Unhandled,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct ControlSnapshot {
     pub epoch: ControlEpoch,
     pub world_input_allowed: bool,
@@ -125,6 +128,7 @@ pub struct ControlSnapshot {
     pub suspended: bool,
 }
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
 pub enum Key {
     Enter,
     Backspace,
@@ -146,12 +150,14 @@ pub struct KeyEvent {
     pub repeat: bool,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TextCommand {
     Backspace,
     Delete,
     SelectAll,
 }
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Input {
     Focus(Option<WidgetId>),
     CancelControls,
@@ -191,6 +197,7 @@ pub enum Input {
     Scroll(i32),
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct UiSnapshot {
     pub composition: Composition,
     pub revision: UiRevision,
@@ -779,12 +786,14 @@ pub enum Paint {
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct HitRegion {
     pub widget: WidgetRef,
     pub bounds: Rect,
     pub clip: Rect,
 }
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Layout {
     pub ui_revision: UiRevision,
     pub viewport: Viewport,
