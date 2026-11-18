@@ -9,7 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 readme = "README.md"
 keywords = ["tilewright", "ui", "widgets", "text-input", "ime"]
-categories = ["gui", "text-editing", "game-development"]
+categories = ["gui", "text-processing", "game-development"]
 version.workspace = true
 publish = false
 

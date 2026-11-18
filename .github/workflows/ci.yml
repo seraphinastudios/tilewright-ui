@@ -35,8 +35,8 @@ jobs:
         run: cargo check --locked --package tilewright-ui-web --target wasm32-unknown-unknown
   windows:
     # The three crates planned for crates.io are pure Rust and must build on
-    # Windows, where the editor and renderer also ship. The C, SDL and browser
-    # proofs stay on Linux.
+    # Windows, where the editor ships them. The C, SDL and browser proofs stay
+    # on Linux.
     name: Windows checks
     runs-on: windows-2025
     timeout-minutes: 45

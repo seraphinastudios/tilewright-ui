@@ -21,7 +21,7 @@ C/SDL and browser hosts. A broader widget catalog follows real consumer needs.
    unpublished; C library/header release compatibility is separate from Rust
    package versioning.
 
-## Steps toward the first publication
+## Order of work
 
 1. Bring the repository current: crate metadata and READMEs, documentation,
    and Windows in CI for the three crates.
@@ -33,8 +33,8 @@ C/SDL and browser hosts. A broader widget catalog follows real consumer needs.
    `tilewright-world`, release notes and the owner's first-publication
    checklist. The owner then publishes the first versions and adds trusted
    publishers.
-4. The Tilewright editor adopts the shared field for one string field in its
-   inspector, opt-in at first.
+4. After the first publication, the Tilewright editor adopts the shared field
+   for one string field in its inspector, opt-in at first.
 
 ## Consumer responsibilities
 
