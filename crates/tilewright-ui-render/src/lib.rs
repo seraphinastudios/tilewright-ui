@@ -9,13 +9,14 @@
 mod resources;
 use std::{collections::HashSet, fmt, sync::Arc};
 use tilewright_render_resources::ResourceProvider;
+use tilewright_render_ui::TextError;
+pub use tilewright_render_ui::TextSystem;
 pub use tilewright_render_ui::UiLimits;
 /// Verified font-pack metadata for explicit host loading; contains no font bytes.
 pub use tilewright_render_ui::unicode_fonts;
 pub use tilewright_render_ui::{
     FontBlob, FontPack, TextAffinity, TextCursor, TextLimits, UnicodeLayout, VisualMotion,
 };
-use tilewright_render_ui::{TextError, TextSystem};
 use tilewright_render_ui::{
     UiDisplayList, UiPaint, UiPrimitive, UiRect, UiTexture, UiViewport, builtin,
 };
@@ -32,12 +33,17 @@ pub struct Namespace {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     InvalidNamespace,
     InvalidViewport,
     StaleSnapshot,
     IdentityCollision,
     LimitExceeded,
+    /// The lent text system issued this compiler's atlas ID a revision lower
+    /// than one this compiler was issued before, or the same revision with
+    /// different bytes: a different text system was lent. Nothing changed.
+    TextSystemChanged,
     Text(TextError),
     Scene(tilewright_scene::Error),
 }
@@ -95,11 +101,32 @@ impl TextGeometry {
     }
 }
 
-/// Owns bounded shaping scratch. Frames own immutable atlas bytes and layouts.
-pub struct UiRenderer {
-    text: TextSystem,
+/// Compiles frames with a text system the host lends for each call.
+///
+/// It holds no fonts, shaping caches or glyph rasters, so constructing it reads
+/// and parses no font. A host that already owns a [`TextSystem`] passes it to
+/// [`UiCompiler::compile`]; the shared widgets are then shaped, measured and
+/// rasterized by exactly the engine, fonts and caches the host's own text uses.
+///
+/// Known limitation with `tilewright-render-ui` 0.7.1: a text system reuses an
+/// unchanged atlas identity only when its previous compile was for the same
+/// atlas ID. When the host's own text and this compiler alternate on one
+/// system, every compile issues a new atlas revision for unchanged bytes, so a
+/// GPU backend re-uploads both atlases on every redraw. A planned renderer
+/// patch release is to remove this; a host that redraws often waits for it.
+#[derive(Debug)]
+pub struct UiCompiler {
     namespace: Namespace,
     limits: UiLimits,
+    /// Revision and digest last issued for `namespace.atlas_resource`.
+    last_atlas: Option<(u64, Digest256)>,
+}
+
+/// Owns its own text system; for standalone hosts with no text of their own.
+/// Frames own immutable atlas bytes and layouts.
+pub struct UiRenderer {
+    text: TextSystem,
+    compiler: UiCompiler,
 }
 impl UiRenderer {
     pub fn new(
@@ -108,6 +135,30 @@ impl UiRenderer {
         namespace: Namespace,
         limits: UiLimits,
     ) -> Result<Self, Error> {
+        let compiler = UiCompiler::new(namespace, limits)?;
+        Ok(Self {
+            text: TextSystem::new(fonts, font_limits)?,
+            compiler,
+        })
+    }
+    pub fn clear_cache(&mut self) {
+        self.text.clear_cache();
+    }
+    /// Compile the exact layout retained by `App::prepare`. Integral logical
+    /// dimensions and explicit physical dimensions apply DPI exactly once.
+    pub fn compile(
+        &mut self,
+        snapshot: &UiSnapshot,
+        layout: &Layout,
+        physical_size: [u32; 2],
+    ) -> Result<CompiledFrame, Error> {
+        self.compiler
+            .compile(&mut self.text, snapshot, layout, physical_size)
+    }
+}
+
+impl UiCompiler {
+    pub fn new(namespace: Namespace, limits: UiLimits) -> Result<Self, Error> {
         if namespace.first_semantic == 0
             || namespace.solid_resource == 0
             || namespace.atlas_resource == 0
@@ -116,19 +167,32 @@ impl UiRenderer {
             return Err(Error::InvalidNamespace);
         }
         Ok(Self {
-            text: TextSystem::new(fonts, font_limits)?,
             namespace,
             limits,
+            last_atlas: None,
         })
-    }
-    pub fn clear_cache(&mut self) {
-        self.text.clear_cache();
     }
     /// Compile the exact layout retained by `App::prepare`. Integral logical
     /// dimensions and explicit physical dimensions apply DPI exactly once.
+    ///
+    /// `system` may be one the host also uses for its own text; this call only
+    /// borrows it, and its fonts and `TextLimits` apply. Lend the same system
+    /// on every call: atlas revisions rise per system, so a second system could
+    /// reissue an old revision of this namespace's atlas ID. A revision lower
+    /// than one this compiler was issued before, or the same revision with
+    /// different bytes, is refused with [`Error::TextSystemChanged`]; a refused
+    /// compile changes nothing. So, given a reserved atlas ID, a compiler never
+    /// returns two different atlases under one (ID, revision). To switch text
+    /// systems on purpose, retire every frame carrying this atlas ID and create
+    /// a new `UiCompiler`.
+    ///
+    /// The namespace's atlas ID must be one the host can never compute for its
+    /// own atlases. [`CompiledFrame::compose`] rejects a host scene that uses
+    /// it with [`Error::IdentityCollision`].
     #[allow(clippy::too_many_lines)]
     pub fn compile(
         &mut self,
+        system: &mut TextSystem,
         snapshot: &UiSnapshot,
         layout: &Layout,
         physical_size: [u32; 2],
@@ -196,7 +260,7 @@ impl UiRenderer {
                         FontRole::Body | FontRole::Button => 18.0,
                         FontRole::Composer => 20.0,
                     };
-                    let shaped = self.text.layout(text, size, None)?;
+                    let shaped = system.layout(text, size, None)?;
                     let editable = if let Some(revision) = text_revision {
                         if *widget != snapshot.composer_widget
                             || *revision != snapshot.composer.revision
@@ -292,7 +356,7 @@ impl UiRenderer {
                 return Err(Error::LimitExceeded);
             }
         }
-        let compiled = self.text.compile(
+        let compiled = system.compile(
             viewport,
             UiDisplayList {
                 primitives: &primitives,
@@ -301,6 +365,19 @@ impl UiRenderer {
             self.namespace.atlas_resource,
             self.limits,
         )?;
+        if let Some(atlas) = compiled
+            .resources
+            .iter()
+            .find(|texture| texture.identity.id.0 == self.namespace.atlas_resource)
+        {
+            let issued = (atlas.identity.revision, atlas.identity.digest);
+            if self.last_atlas.is_some_and(|(revision, digest)| {
+                issued.0 < revision || (issued.0 == revision && issued.1 != digest)
+            }) {
+                return Err(Error::TextSystemChanged);
+            }
+            self.last_atlas = Some(issued);
+        }
         for (text, index) in texts.iter_mut().zip(text_indices) {
             text.layout = compiled
                 .layouts

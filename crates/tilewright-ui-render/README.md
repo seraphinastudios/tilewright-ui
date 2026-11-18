@@ -25,8 +25,27 @@ It targets `tilewright-render-ui =0.7.1` for Unicode shaping, selection geometry
 glyph rasterization and immutable resources. It does not create widget bounds.
 
 Construct `UiRenderer` with a verified `FontPack`, text/paint budgets and a
-caller-reserved `Namespace`. Fonts are supplied as explicit bytes and SHA-256
-digests. Reserve the two resource IDs for the engine's entire lifetime; retain
+caller-reserved `Namespace`; it owns its own `TextSystem`. A host that already
+has a `TextSystem` for its own text constructs `UiCompiler` from the namespace
+and budgets alone and lends that system to each call, so fonts load once and
+the shared widgets shape exactly as the host's own text:
+
+```rust,ignore
+let mut compiler = UiCompiler::new(namespace, UiLimits::default())?;
+let frame = compiler.compile(&mut host_text, &snapshot, &layout, physical_size)?;
+```
+
+Reserve its `atlas_resource` as an ID the host can never compute for its own
+atlases, and lend the same `TextSystem` on every call. A revision lower than one
+the compiler was issued before, or the same revision with different bytes, is
+refused and changes nothing, so a compiler never returns two different atlases
+under one (ID, revision). To switch systems, retire every frame carrying the
+compiler's atlas ID and create a new `UiCompiler`. With `tilewright-render-ui` 0.7.1, alternating
+host and shared compiles on one system issue a new atlas revision each time, so
+a GPU backend re-uploads both atlases per redraw. A planned renderer patch
+release is to remove this known limitation; see `docs/CONTRACT.md` in the repository.
+
+Fonts are supplied as explicit bytes and SHA-256 digests. Reserve the two resource IDs for the engine's entire lifetime; retain
 each `CompiledFrame` while a frame is prepared, in flight or displayed.
 Namespaces are checked again when composing an existing world scene.
 

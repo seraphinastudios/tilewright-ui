@@ -82,6 +82,39 @@ fn resource_requests_require_exact_identity_and_byte_budget() {
     );
 }
 
+#[test]
+fn a_compiler_takes_no_fonts_and_checks_its_namespace() {
+    let namespace = Namespace {
+        first_semantic: 100,
+        solid_resource: 100,
+        atlas_resource: 101,
+    };
+    assert!(UiCompiler::new(namespace, UiLimits::default()).is_ok());
+    for bad in [
+        Namespace {
+            first_semantic: 0,
+            ..namespace
+        },
+        Namespace {
+            solid_resource: 0,
+            ..namespace
+        },
+        Namespace {
+            atlas_resource: 0,
+            ..namespace
+        },
+        Namespace {
+            atlas_resource: 100,
+            ..namespace
+        },
+    ] {
+        assert!(matches!(
+            UiCompiler::new(bad, UiLimits::default()),
+            Err(Error::InvalidNamespace)
+        ));
+    }
+}
+
 #[cfg(feature = "prototype")]
 fn fonts() -> FontPack {
     let root = std::path::PathBuf::from(
@@ -134,6 +167,9 @@ fn unicode_geometry_dpi_resources_and_cpu_reference_frame() {
     )
     .unwrap();
     let first = renderer.compile(&snapshot, &layout, [640, 400]).unwrap();
+    // The renderer shapes with the one text system it owns, kept across calls.
+    let cached = renderer.text.cached_layouts();
+    assert!(cached > 0);
     let editable = first.editable().unwrap();
     assert_eq!(editable.layout.text(), original);
     assert!(
@@ -157,6 +193,7 @@ fn unicode_geometry_dpi_resources_and_cpu_reference_frame() {
     assert_eq!((frame.width, frame.height), (640, 400));
     assert!(frame.rgba8.chunks_exact(4).any(|pixel| pixel[3] != 0));
     let again = renderer.compile(&snapshot, &layout, [640, 400]).unwrap();
+    assert_eq!(renderer.text.cached_layouts(), cached);
     assert_eq!(first.quads, again.quads);
     assert_eq!(
         frame,
@@ -190,7 +227,9 @@ fn unicode_geometry_dpi_resources_and_cpu_reference_frame() {
             .iter()
             .any(|quad| quad.color == [0.23, 0.40, 0.62, 1.0])
     );
+    assert!(renderer.text.cached_layouts() > 0);
     renderer.clear_cache();
+    assert_eq!(renderer.text.cached_layouts(), 0);
     ui.apply(Input::Preedit {
         target: ui.text_target().unwrap(),
         text: "e\u{301}".into(),
@@ -252,7 +291,7 @@ fn unicode_geometry_dpi_resources_and_cpu_reference_frame() {
             .compile(&next_snapshot, &bad_layout, [640, 400])
             .is_err()
     );
-    renderer.limits.maximum_primitives = 1;
+    renderer.compiler.limits.maximum_primitives = 1;
     assert!(matches!(
         renderer.compile(&next_snapshot, &next_layout, [640, 400]),
         Err(Error::LimitExceeded)
@@ -274,4 +313,246 @@ fn unicode_geometry_dpi_resources_and_cpu_reference_frame() {
         first.compose(&world, first.standalone([0.0; 4]).unwrap().resources),
         Err(Error::IdentityCollision)
     ));
+}
+
+#[cfg(feature = "prototype")]
+fn composer(text: &str) -> (UiSnapshot, Layout) {
+    let mut ui = Ui::new(Limits::default()).unwrap();
+    ui.apply(Input::Focus(Some(tilewright_ui::COMPOSER)))
+        .unwrap();
+    ui.apply(Input::TextCommit {
+        target: ui.text_target().unwrap(),
+        text: text.into(),
+    })
+    .unwrap();
+    let snapshot = ui.snapshot();
+    let layout =
+        tilewright_ui::layout(&snapshot, Viewport::new(320.0, 200.0, 2.0).unwrap()).unwrap();
+    (snapshot, layout)
+}
+
+/// The host's own text, compiled with its own solid and atlas IDs.
+#[cfg(feature = "prototype")]
+fn host_label(host: &mut TextSystem) -> tilewright_render_ui::CompiledUnicodeUi {
+    let host_solid = UiTexture {
+        id: ResourceId(200),
+        revision: 1,
+        digest: Digest256(builtin::SOLID_SHA256),
+    };
+    let host_viewport = UiViewport {
+        logical_size: [320, 200],
+        physical_size: [640, 400],
+    };
+    host.compile(
+        host_viewport,
+        UiDisplayList {
+            primitives: &[UiPrimitive::Text {
+                origin: [4.0, 4.0],
+                clip: UiRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 320.0,
+                    height: 200.0,
+                },
+                paint: UiPaint {
+                    semantic_id: SemanticId(1),
+                    painter_order: 1,
+                    color: [1.0; 4],
+                },
+                font: builtin::FONT_ID,
+                size: 18.0,
+                text: "Host label",
+            }],
+        },
+        host_solid,
+        201,
+        UiLimits::default(),
+    )
+    .unwrap()
+}
+
+#[cfg(feature = "prototype")]
+const NAMESPACE: Namespace = Namespace {
+    first_semantic: 100,
+    solid_resource: 100,
+    atlas_resource: 101,
+};
+
+#[cfg(feature = "prototype")]
+fn field_atlas(frame: &CompiledFrame) -> u64 {
+    frame
+        .quads
+        .iter()
+        .filter(|quad| quad.resource_id == ResourceId(NAMESPACE.atlas_resource))
+        .map(|quad| quad.resource_revision)
+        .max()
+        .unwrap()
+}
+
+/// A host that lends its own text system gets the shared field shaped,
+/// measured and rasterized by that system alone, exactly as its own text is.
+#[test]
+#[cfg(feature = "prototype")]
+#[allow(clippy::float_cmp)] // Identical engines must give bit-identical geometry.
+fn a_lent_host_text_system_shapes_the_field_exactly_as_the_host_does() {
+    let original = "A\u{301} אבג مرحبا नमस्ते 👩‍💻";
+    let (snapshot, layout) = composer(original);
+    let mut host = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    let digest = host.font_pack().digest();
+    host.layout("Host label", 18.0, None).unwrap();
+    let before = host.cached_layouts();
+    let mut compiler = UiCompiler::new(NAMESPACE, UiLimits::default()).unwrap();
+    let lent = compiler
+        .compile(&mut host, &snapshot, &layout, [640, 400])
+        .unwrap();
+    // The field's text went through the host's own caches and fonts.
+    assert!(host.cached_layouts() > before);
+    assert_eq!(host.font_pack().digest(), digest);
+    assert_eq!(lent.unsupported, 0);
+
+    // Caret positions and widths equal an independent shaping of the same
+    // string, size and fonts, not a cache hit on the field's own layout.
+    let field = lent.editable().unwrap();
+    let own = TextSystem::new(fonts(), TextLimits::default())
+        .unwrap()
+        .layout(original, 20.0, None)
+        .unwrap();
+    assert_eq!(field.layout.text(), own.text());
+    assert_eq!(field.layout.size(), own.size());
+    assert_eq!(
+        field.layout.grapheme_boundaries(),
+        own.grapheme_boundaries()
+    );
+    for byte in own.grapheme_boundaries() {
+        for affinity in [TextAffinity::Before, TextAffinity::After] {
+            let cursor = TextCursor {
+                byte: *byte,
+                affinity,
+            };
+            assert_eq!(field.layout.caret(cursor), own.caret(cursor));
+        }
+    }
+
+    // An owned renderer over the same pack produces the identical frame.
+    let mut owned = UiRenderer::new(
+        fonts(),
+        TextLimits::default(),
+        NAMESPACE,
+        UiLimits::default(),
+    )
+    .unwrap();
+    let alone = owned.compile(&snapshot, &layout, [640, 400]).unwrap();
+    assert_eq!(lent.quads, alone.quads);
+    assert_eq!(
+        lent.standalone([0.0; 4]).unwrap().render_rgba().unwrap(),
+        alone.standalone([0.0; 4]).unwrap().render_rgba().unwrap()
+    );
+}
+
+/// The host compiles its own text with its own atlas ID between field
+/// compiles. Correctness: the field's atlas revision never goes down and
+/// every frame, old or new, renders the same pixels.
+#[test]
+#[cfg(feature = "prototype")]
+fn alternating_host_and_field_compiles_stay_consistent() {
+    let (snapshot, layout) = composer("Field text");
+    let mut host = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    let mut compiler = UiCompiler::new(NAMESPACE, UiLimits::default()).unwrap();
+    let lent = compiler
+        .compile(&mut host, &snapshot, &layout, [640, 400])
+        .unwrap();
+    let pixels = lent.standalone([0.0; 4]).unwrap().render_rgba().unwrap();
+    let host_frame = host_label(&mut host);
+    assert!(
+        host_frame
+            .quads
+            .iter()
+            .all(|quad| quad.resource_id != ResourceId(NAMESPACE.atlas_resource))
+    );
+    let again = compiler
+        .compile(&mut host, &snapshot, &layout, [640, 400])
+        .unwrap();
+    assert!(field_atlas(&again) >= field_atlas(&lent));
+    // Known limitation of tilewright-render-ui 0.7.1: one `last_atlas` slot
+    // per text system, so alternating atlas IDs reissue unchanged bytes under
+    // a new revision and a GPU backend re-uploads them on every redraw. When
+    // the renderer keeps one slot per atlas ID, flip this to `==`.
+    assert!(field_atlas(&again) > field_atlas(&lent));
+    for frame in [&lent, &again] {
+        assert_eq!(
+            pixels,
+            frame.standalone([0.0; 4]).unwrap().render_rgba().unwrap()
+        );
+    }
+}
+
+/// Lending a different text system later could reissue an old revision of
+/// the field's atlas ID. A lower revision, or an equal one with different
+/// bytes, is refused every time and changes nothing. A content change raises
+/// the revision under any atlas reuse policy, so this holds after the pin moves.
+#[test]
+#[cfg(feature = "prototype")]
+fn a_compiler_refuses_another_systems_atlas_revisions() {
+    let (a_snapshot, a_layout) = composer("Field text");
+    let (b_snapshot, b_layout) = composer("Other words");
+    let mut first = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    let mut compiler = UiCompiler::new(NAMESPACE, UiLimits::default()).unwrap();
+    compiler
+        .compile(&mut first, &a_snapshot, &a_layout, [640, 400])
+        .unwrap();
+    compiler
+        .compile(&mut first, &b_snapshot, &b_layout, [640, 400])
+        .unwrap();
+    host_label(&mut first);
+    let mut second = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    for _ in 0..2 {
+        assert!(matches!(
+            compiler.compile(&mut second, &a_snapshot, &a_layout, [640, 400]),
+            Err(Error::TextSystemChanged)
+        ));
+    }
+    compiler
+        .compile(&mut first, &a_snapshot, &a_layout, [640, 400])
+        .unwrap();
+
+    // Equal revision, different bytes.
+    let mut other = UiCompiler::new(NAMESPACE, UiLimits::default()).unwrap();
+    let mut one = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    let mut two = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    other
+        .compile(&mut one, &a_snapshot, &a_layout, [640, 400])
+        .unwrap();
+    assert!(matches!(
+        other.compile(&mut two, &b_snapshot, &b_layout, [640, 400]),
+        Err(Error::TextSystemChanged)
+    ));
+}
+
+/// The compiler uses only the fonts of the lent system: with a Latin-only
+/// system, scripts outside it are reported missing instead of found elsewhere.
+#[test]
+#[cfg(feature = "prototype")]
+fn a_compiler_uses_only_the_lent_systems_fonts() {
+    let full = fonts();
+    let latin = FontPack::new(full.fonts()[..1].to_vec(), TextLimits::default()).unwrap();
+    let mut host = TextSystem::new(latin, TextLimits::default()).unwrap();
+    let mut compiler = UiCompiler::new(NAMESPACE, UiLimits::default()).unwrap();
+    let (latin_snapshot, latin_layout) = composer("Plain text");
+    let plain = compiler
+        .compile(&mut host, &latin_snapshot, &latin_layout, [640, 400])
+        .unwrap();
+    assert_eq!(plain.unsupported, 0);
+    let (snapshot, layout) = composer("Plain אבג");
+    let hebrew = compiler
+        .compile(&mut host, &snapshot, &layout, [640, 400])
+        .unwrap();
+    assert!(hebrew.unsupported > 0);
+    assert!(
+        !hebrew
+            .editable()
+            .unwrap()
+            .layout
+            .missing_glyphs()
+            .is_empty()
+    );
 }
