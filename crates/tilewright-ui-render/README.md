@@ -42,9 +42,10 @@ refused and changes nothing, so a compiler never returns two different atlases
 under one (ID, revision). To switch systems, retire every frame carrying the
 compiler's atlas ID and create a new `UiCompiler`. Host and shared compiles may
 alternate on one system: an unchanged atlas keeps its exact identity per atlas
-ID, so nothing is re-uploaded. The text system remembers a small fixed number of
-recently used atlas IDs; a host that compiles under more IDs than that per frame
-loses reuse, never correctness. See `docs/CONTRACT.md` in the repository.
+ID, so nothing is re-uploaded. The text system remembers only a small fixed
+number of recently used atlas IDs; an ID compiled again after more other IDs
+than that, or after `clear_cache`, loses reuse, never correctness. See
+`docs/CONTRACT.md` in the repository.
 
 Fonts are supplied as explicit bytes and SHA-256 digests. Reserve the two resource IDs for the engine's entire lifetime; retain
 each `CompiledFrame` while a frame is prepared, in flight or displayed.

@@ -111,9 +111,10 @@ impl TextGeometry {
 /// The host's own text and this compiler may alternate on one system: an
 /// unchanged atlas keeps its exact identity per atlas ID, whatever other IDs
 /// were compiled in between, so nothing is re-uploaded. The text system
-/// remembers a small fixed number of recently used atlas IDs; a host that
-/// compiles under more IDs than that per frame loses reuse (a forgotten ID
-/// gets a new revision for unchanged bytes), never correctness.
+/// remembers only a small fixed number of recently used atlas IDs. An ID
+/// compiled again after more other IDs than that, or any ID after
+/// `TextSystem::clear_cache`, gets a new revision for unchanged bytes: it
+/// loses reuse, never correctness.
 #[derive(Debug)]
 pub struct UiCompiler {
     namespace: Namespace,

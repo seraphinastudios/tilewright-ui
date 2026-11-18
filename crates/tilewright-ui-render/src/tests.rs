@@ -379,6 +379,17 @@ const NAMESPACE: Namespace = Namespace {
 };
 
 #[cfg(feature = "prototype")]
+fn host_atlas(frame: &tilewright_render_ui::CompiledUnicodeUi) -> u64 {
+    frame
+        .quads
+        .iter()
+        .filter(|quad| quad.resource_id == ResourceId(201))
+        .map(|quad| quad.resource_revision)
+        .max()
+        .unwrap()
+}
+
+#[cfg(feature = "prototype")]
 fn field_atlas(frame: &CompiledFrame) -> u64 {
     frame
         .quads
@@ -451,7 +462,8 @@ fn a_lent_host_text_system_shapes_the_field_exactly_as_the_host_does() {
 
 /// The host compiles its own text with its own atlas ID between field
 /// compiles. Correctness: the field's atlas revision never goes down and
-/// every frame, old or new, renders the same pixels.
+/// every frame, old or new, renders the same pixels. Reuse: an unchanged
+/// atlas keeps its exact revision across the other's compile.
 #[test]
 #[cfg(feature = "prototype")]
 fn alternating_host_and_field_compiles_stay_consistent() {
@@ -476,6 +488,7 @@ fn alternating_host_and_field_compiles_stay_consistent() {
     // Alternating host and field compiles on one lent system keep each
     // unchanged atlas's identity, so nothing is re-uploaded.
     assert_eq!(field_atlas(&again), field_atlas(&lent));
+    assert_eq!(host_atlas(&host_label(&mut host)), host_atlas(&host_frame));
     for frame in [&lent, &again] {
         assert_eq!(
             pixels,
@@ -487,7 +500,8 @@ fn alternating_host_and_field_compiles_stay_consistent() {
 /// Lending a different text system later could reissue an old revision of
 /// the field's atlas ID. A lower revision, or an equal one with different
 /// bytes, is refused every time and changes nothing. A content change raises
-/// the revision under any atlas reuse policy, so this holds after the pin moves.
+/// the revision under any atlas reuse policy, so this holds whatever the text
+/// system remembers.
 #[test]
 #[cfg(feature = "prototype")]
 fn a_compiler_refuses_another_systems_atlas_revisions() {
