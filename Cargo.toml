@@ -13,6 +13,7 @@ resolver = "3"
 authors = ["Seraphina Studios"]
 edition = "2024"
 license = "MIT"
+license-file = "LICENSE"
 repository = "https://github.com/seraphinastudios/tilewright-ui"
 rust-version = "1.97.1"
 version = "0.1.0"
