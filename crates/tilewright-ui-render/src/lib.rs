@@ -108,12 +108,13 @@ impl TextGeometry {
 /// [`UiCompiler::compile`]; the shared widgets are then shaped, measured and
 /// rasterized by exactly the engine, fonts and caches the host's own text uses.
 ///
-/// Known limitation with `tilewright-render-ui` 0.7.1: a text system reuses an
-/// unchanged atlas identity only when its previous compile was for the same
-/// atlas ID. When the host's own text and this compiler alternate on one
-/// system, every compile issues a new atlas revision for unchanged bytes, so a
-/// GPU backend re-uploads both atlases on every redraw. A planned renderer
-/// patch release is to remove this; a host that redraws often waits for it.
+/// The host's own text and this compiler may alternate on one system: an
+/// unchanged atlas keeps its exact identity per atlas ID, whatever other IDs
+/// were compiled in between, so nothing is re-uploaded. The text system
+/// remembers only a small fixed number of recently used atlas IDs. An ID
+/// compiled again after more other IDs than that, or any ID after
+/// `TextSystem::clear_cache`, gets a new revision for unchanged bytes: it
+/// loses reuse, never correctness.
 #[derive(Debug)]
 pub struct UiCompiler {
     namespace: Namespace,

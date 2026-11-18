@@ -33,8 +33,8 @@ native HTML controls over the rendered world and preserves the same semantic
 model. Build and browser tests do not establish OS IME, screen-reader or Classic
 integration support; those capabilities require their own actual host evidence.
 
-Rust 1.97.1 is pinned. The renderer crates are pinned at exactly `0.7.1`, the
-family published from renderer source release `v1.27.0`. The committed
+Rust 1.97.1 is pinned. The renderer crates are pinned at exactly `0.7.2`, the
+family published from renderer source release `v1.29.0`. The committed
 `Cargo.lock` resolves registry packages only, and Dependabot proposes
 dependency and Actions updates weekly. CI runs on GitHub-hosted runners: Linux
 runs every check below, and Windows tests the three planned crates. The

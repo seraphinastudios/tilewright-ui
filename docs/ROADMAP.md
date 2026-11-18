@@ -53,7 +53,7 @@ names need not change merely to adopt common widgets.
 
 ## Migration order
 
-- Use the renderer crates pinned at `0.7.1`. The UI crates have their own
+- Use the renderer crates pinned at `0.7.2`. The UI crates have their own
   version sequence and preserve earlier immutable artifacts. Once the editor
   depends on them, a renderer update moves through the renderer, then this
   repository, then the editor.

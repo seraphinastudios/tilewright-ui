@@ -1,7 +1,7 @@
 # tilewright-ui-render
 
 Draws `tilewright-ui` widgets through the Tilewright renderer crates, pinned
-at exactly `0.7.1`. It reuses the renderer's text shaping, glyph resources and
+at exactly `0.7.2`. It reuses the renderer's text shaping, glyph resources and
 drawing; it does not add a text engine of its own. See the
 [repository](https://github.com/seraphinastudios/tilewright-ui) for the
 architecture and the examples.
@@ -21,7 +21,7 @@ licences; this crate contains none and never searches for system fonts.
 
 `UiRenderer::compile(&prepared.snapshot, &prepared.layout, physical_size)`
 translates the exact neutral `tilewright-ui::Layout` retained by the app.
-It targets `tilewright-render-ui =0.7.1` for Unicode shaping, selection geometry,
+It targets `tilewright-render-ui =0.7.2` for Unicode shaping, selection geometry,
 glyph rasterization and immutable resources. It does not create widget bounds.
 
 Construct `UiRenderer` with a verified `FontPack`, text/paint budgets and a
@@ -40,10 +40,12 @@ atlases, and lend the same `TextSystem` on every call. A revision lower than one
 the compiler was issued before, or the same revision with different bytes, is
 refused and changes nothing, so a compiler never returns two different atlases
 under one (ID, revision). To switch systems, retire every frame carrying the
-compiler's atlas ID and create a new `UiCompiler`. With `tilewright-render-ui` 0.7.1, alternating
-host and shared compiles on one system issue a new atlas revision each time, so
-a GPU backend re-uploads both atlases per redraw. A planned renderer patch
-release is to remove this known limitation; see `docs/CONTRACT.md` in the repository.
+compiler's atlas ID and create a new `UiCompiler`. Host and shared compiles may
+alternate on one system: an unchanged atlas keeps its exact identity per atlas
+ID, so nothing is re-uploaded. The text system remembers only a small fixed
+number of recently used atlas IDs; an ID compiled again after more other IDs
+than that, or after `clear_cache`, loses reuse, never correctness. See
+`docs/CONTRACT.md` in the repository.
 
 Fonts are supplied as explicit bytes and SHA-256 digests. Reserve the two resource IDs for the engine's entire lifetime; retain
 each `CompiledFrame` while a frame is prepared, in flight or displayed.
