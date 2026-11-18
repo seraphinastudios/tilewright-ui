@@ -15,9 +15,13 @@ pub use text::{
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum UiError {
     InvalidInput,
     LimitExceeded,
+    /// New text holds a character a single-line field never accepts (see
+    /// [`refuses_single_line`]). Checked before the byte budget.
+    RefusedText,
     QueueFull,
     Stale,
     Exhausted,
@@ -634,7 +638,11 @@ impl Ui {
                 if self.composition == Composition::SingleField {
                     return Err(UiError::InvalidInput);
                 }
-                if text.len() > self.limits.message_bytes || text.chars().any(char::is_control) {
+                // One history row is one line: no line or paragraph separators.
+                if text.chars().any(refuses_single_line) {
+                    return Err(UiError::RefusedText);
+                }
+                if text.len() > self.limits.message_bytes {
                     return Err(UiError::LimitExceeded);
                 }
                 while self.history.len() >= self.limits.history_messages

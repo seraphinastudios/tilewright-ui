@@ -268,9 +268,9 @@ fn geometry_event(app: &mut App, event: &Event, window_id: u32, compiled: Option
                 Keycode::End => VisualMotion::End,
                 _ => return,
             };
-            // The layout holds the marked display text; map back to committed.
-            let Ok(focus) = snapshot
-                .committed_cursor(editable.move_visual(snapshot.display_selection.focus, motion))
+            // The layout holds the marked display text; step past guards
+            // and map back to committed.
+            let Ok(focus) = snapshot.step_visual(|cursor| editable.move_visual(cursor, motion))
             else {
                 return;
             };

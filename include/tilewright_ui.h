@@ -37,6 +37,8 @@ typedef uint32_t twui_status;
 #define TWUI_POISONED UINT32_C(11)
 #define TWUI_INTERNAL_PANIC UINT32_C(12)
 #define TWUI_RENDER_ERROR UINT32_C(13)
+/* New text holds a character a single-line field refuses (see twui_apply). */
+#define TWUI_REFUSED_TEXT UINT32_C(14)
 
 typedef struct twui_config {
     uint32_t struct_size, abi_version;
@@ -45,11 +47,15 @@ typedef struct twui_config {
 } twui_config;
 #define TWUI_CONFIG_INIT { sizeof(twui_config), TWUI_ABI_VERSION, 4096, 128, 65536, 4096, 16, 3 }
 
-/* UTF-8 lengths are bytes, never NUL-terminated strings. New COMMIT/PREEDIT
- * text holding any control character (NUL, newline, tab, ...), U+2028 or U+2029
- * is refused whole with LIMIT_EXCEEDED and changes nothing; RECEIVE refuses
- * controls. A value loaded with twui_bind_field may hold them: it is kept and
- * copied back exactly, and drawn with one visible marker per stored break.
+/* UTF-8 lengths are bytes, never NUL-terminated strings. COMMIT, PREEDIT and
+ * RECEIVE text holding any control character (NUL, newline, tab, ...), U+2028
+ * or U+2029 is refused whole with REFUSED_TEXT and changes nothing; that check
+ * comes before the byte budget, so text that is both too long and refused
+ * returns REFUSED_TEXT. A value loaded with twui_bind_field may hold them: it
+ * is kept and copied back exactly, and drawn with one marker per stored break.
+ * The drawn text can be 3x the stored bytes; with the built-in renderer limit
+ * of 65,536 text bytes, keep composer_bytes at or below 21,845 for single
+ * fields that may hold stored controls, or every frame fails with RENDER_ERROR.
  * COMMIT/PREEDIT/RECEIVE use text+text_len. SELECT uses UTF-8 anchor/caret bytes. PREEDIT uses anchor/caret as
  * scalar start/length (UINT64_MAX means SDL unknown -1). Text/edit/preedit calls carry the target generation,
  * control epoch and text revision obtained from state; stale targets fail.

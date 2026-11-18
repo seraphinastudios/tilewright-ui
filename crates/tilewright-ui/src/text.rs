@@ -132,6 +132,43 @@ impl TextInputSnapshot {
     }
 }
 
+impl TextInputSnapshot {
+    /// One visual caret step, for hosts that move the caret with a renderer
+    /// layout of `display_text`. `step` moves a display cursor one position
+    /// (left, right, home or end). It starts from `display_selection.focus`
+    /// and the result maps back to committed text.
+    ///
+    /// A marker with a zero-width guard has two display positions for one
+    /// committed position. If a step only crosses the guard, the committed
+    /// caret would stay put and the next step would start from the same
+    /// place, so it could never pass. While the committed position has not
+    /// changed but the display cursor has, this steps again, at most twice
+    /// more. Fails with `InvalidInput` during composition.
+    pub fn step_visual(
+        &self,
+        mut step: impl FnMut(TextCursor) -> TextCursor,
+    ) -> Result<TextCursor, UiError> {
+        if self.composition.is_some() {
+            return Err(UiError::InvalidInput);
+        }
+        let start = self.selection.focus;
+        let mut display = self.display_selection.focus;
+        let mut result = start;
+        for _ in 0..3 {
+            let next = step(display);
+            if next == display {
+                break;
+            }
+            display = next;
+            result = self.committed_cursor(display)?;
+            if result.byte != start.byte {
+                break;
+            }
+        }
+        Ok(result)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Composition {
     text: String,
@@ -428,9 +465,11 @@ fn validate_insert(
     }
     validate_cursor(current, TextCursor::new(range.start))?;
     validate_cursor(current, TextCursor::new(range.end))?;
-    if text.len() > max_bytes.saturating_sub(current.len() - range.len())
-        || text.chars().any(refuses_single_line)
-    {
+    // A refused character wins over the budget: trimming would not help.
+    if text.chars().any(refuses_single_line) {
+        return Err(UiError::RefusedText);
+    }
+    if text.len() > max_bytes.saturating_sub(current.len() - range.len()) {
         return Err(UiError::LimitExceeded);
     }
     Ok(())

@@ -165,6 +165,14 @@ fn a_bound_field_paints_markers_and_submits_the_exact_stored_bytes() {
     })
     .unwrap();
     assert_eq!(submitted(&mut ui), format!("<{stored}"));
+    // Guarded values: the zero-width guard is display only, never stored.
+    for stored in ["a\n\u{301}", "\u{600}\n", "\u{600}\r\n\u{301}"] {
+        let mut ui = field(stored);
+        let snapshot = ui.snapshot().composer;
+        assert!(snapshot.display_text.contains('\u{200b}'), "{stored:?}");
+        assert_eq!(snapshot.committed, stored);
+        assert_eq!(submitted(&mut ui).as_bytes(), stored.as_bytes());
+    }
 }
 
 #[test]
@@ -559,29 +567,21 @@ fn typed_pasted_replaced_or_composed_breaks_and_controls_are_refused_whole() {
             target,
             text: refused.into(),
         };
-        assert_eq!(ui.apply(commit), Err(UiError::LimitExceeded), "{refused:?}");
+        assert_eq!(ui.apply(commit), Err(UiError::RefusedText), "{refused:?}");
         // A browser-style whole-value replacement, even keeping the stored break.
         let replace = Input::ReplaceText {
             target,
             text: format!("A{refused}\nB"),
             selection: TextSelection::default(),
         };
-        assert_eq!(
-            ui.apply(replace),
-            Err(UiError::LimitExceeded),
-            "{refused:?}"
-        );
+        assert_eq!(ui.apply(replace), Err(UiError::RefusedText), "{refused:?}");
         let preedit = Input::Preedit {
             target,
             text: refused.into(),
             start: 0,
             length: 0,
         };
-        assert_eq!(
-            ui.apply(preedit),
-            Err(UiError::LimitExceeded),
-            "{refused:?}"
-        );
+        assert_eq!(ui.apply(preedit), Err(UiError::RefusedText), "{refused:?}");
         assert_eq!(ui.snapshot(), before, "{refused:?}");
     }
     // An IME commit that carries one is refused and keeps the composition.
@@ -603,14 +603,14 @@ fn typed_pasted_replaced_or_composed_breaks_and_controls_are_refused_whole() {
                 start: 1,
                 length: 0
             }),
-            Err(UiError::LimitExceeded)
+            Err(UiError::RefusedText)
         );
         assert_eq!(
             ui.apply(Input::TextCommit {
                 target,
                 text: format!("é{refused}")
             }),
-            Err(UiError::LimitExceeded)
+            Err(UiError::RefusedText)
         );
         assert_eq!(ui.snapshot(), composing, "{refused:?}");
     }
@@ -647,8 +647,74 @@ fn chat_composers_refuse_separators_as_well() {
                 target,
                 text: format!("a{separator}b")
             }),
-            Err(UiError::LimitExceeded)
+            Err(UiError::RefusedText)
         );
     }
     assert_eq!(ui.snapshot().composer.committed, "");
+}
+
+#[test]
+fn a_refused_edit_leaves_a_text_input_exactly_as_it_was() {
+    let mut input = open("A\nB");
+    caret(&mut input, 1);
+    let before = input.clone();
+    for refused in ["\n", "\t", "x\u{2028}", "\u{2029}"] {
+        assert_eq!(input.input(refused), Err(UiError::RefusedText));
+        assert_eq!(
+            input.update_preedit(refused, 0, 0),
+            Err(UiError::RefusedText)
+        );
+        assert_eq!(input, before, "{refused:?}");
+    }
+    input.update_preedit("é", 1, 0).unwrap();
+    let composing = input.clone();
+    // An IME commit with a refused character keeps the composition.
+    assert_eq!(input.input("é\n"), Err(UiError::RefusedText));
+    assert_eq!(input.update_preedit("é\n", 1, 0), Err(UiError::RefusedText));
+    assert_eq!(input, composing);
+}
+
+#[test]
+fn a_refused_character_wins_over_the_byte_budget() {
+    let mut input = TextInput::new("abc".into(), 4).unwrap();
+    let before = input.clone();
+    assert_eq!(input.input("xy"), Err(UiError::LimitExceeded));
+    assert_eq!(input.input("x\ny"), Err(UiError::RefusedText));
+    assert_eq!(
+        input.update_preedit("x\ny", 0, 0),
+        Err(UiError::RefusedText)
+    );
+    assert_eq!(input, before);
+    input.input("x").unwrap();
+    assert_eq!(input.text(), "abcx");
+}
+
+#[test]
+fn received_chat_messages_refuse_breaks_and_separators() {
+    let mut ui = Ui::new(Limits {
+        message_bytes: 8,
+        ..Limits::default()
+    })
+    .unwrap();
+    ui.apply(Input::ReceiveMessage("kept".into())).unwrap();
+    let before = ui.snapshot();
+    for refused in [
+        "a\u{2028}b",
+        "a\u{2029}",
+        "a\nb",
+        "\t",
+        "long\u{2028}message",
+    ] {
+        assert_eq!(
+            ui.apply(Input::ReceiveMessage(refused.into())),
+            Err(UiError::RefusedText),
+            "{refused:?}"
+        );
+        assert_eq!(ui.snapshot(), before);
+    }
+    assert_eq!(
+        ui.apply(Input::ReceiveMessage("too long!".into())),
+        Err(UiError::LimitExceeded)
+    );
+    assert_eq!(ui.snapshot().messages, ["kept"]);
 }

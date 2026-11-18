@@ -134,16 +134,34 @@ static void embedded_stored_breaks(void) {
     expect_text(ctx, stored);
     toggle(ctx, TWUI_SET_FOCUS, 1);
     twui_state before = state(ctx);
-    twui_input typed = input(ctx, TWUI_COMMIT);
-    typed.text = (const uint8_t *)"\xe2\x80\xa9"; typed.text_len = 3;
-    assert(apply(ctx, typed) == TWUI_LIMIT_EXCEEDED);
-    unchanged(before, state(ctx));
+    /* New text with a control or separator is refused whole. text_len carries
+       an embedded NUL; the refusal comes before the byte budget. */
+    static const struct { const char *text; uint64_t len; uint32_t kind; } refused[] = {
+        {"\xe2\x80\xa9", 3, TWUI_COMMIT}, {"\n", 1, TWUI_COMMIT},
+        {"a\0b", 3, TWUI_COMMIT}, {"\t", 1, TWUI_PREEDIT},
+    };
+    for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
+        twui_input typed = input(ctx, refused[i].kind);
+        typed.text = (const uint8_t *)refused[i].text; typed.text_len = refused[i].len;
+        assert(apply(ctx, typed) == TWUI_REFUSED_TEXT);
+        unchanged(before, state(ctx));
+    }
     assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
     twui_action action = {0}; action.struct_size = sizeof action;
     assert(twui_peek_action(ctx, &action) == TWUI_OK);
     uint8_t copy[16] = {0}; uint64_t required = 0;
     assert(twui_copy_action(ctx, action.batch_id, copy, sizeof copy, &required) == TWUI_OK);
     assert(required == strlen(stored) && memcmp(copy, stored, (size_t)required) == 0);
+    assert(twui_ack_action(ctx, action.batch_id) == TWUI_OK);
+    /* A guarded value (a combining mark after a stored break) stores no guard. */
+    const char *guarded = "a\n\xcc\x81";
+    assert(twui_bind_field(ctx, (const uint8_t *)guarded, strlen(guarded), &widget) == TWUI_OK);
+    expect_text(ctx, guarded);
+    toggle(ctx, TWUI_SET_FOCUS, 1);
+    assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
+    assert(twui_peek_action(ctx, &action) == TWUI_OK);
+    assert(twui_copy_action(ctx, action.batch_id, copy, sizeof copy, &required) == TWUI_OK);
+    assert(required == strlen(guarded) && memcmp(copy, guarded, (size_t)required) == 0);
     assert(twui_destroy(ctx) == TWUI_OK);
 }
 
@@ -153,6 +171,9 @@ static void embedded_chat(void) {
     assert(twui_create_with_composition(&cfg, TWUI_COMPOSITION_CHAT_PANEL, &ctx) == TWUI_OK);
     twui_layout layout = attachment();
     assert(twui_set_layout(ctx, &layout) == TWUI_OK);
+    twui_input separator = input(ctx, TWUI_RECEIVE);
+    separator.text = (const uint8_t *)"a\xe2\x80\xa8" "b"; separator.text_len = 5;
+    assert(apply(ctx, separator) == TWUI_REFUSED_TEXT);
     toggle(ctx, TWUI_SET_FOCUS, 1); commit(ctx, "chat");
     assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
     expect_text(ctx, "");

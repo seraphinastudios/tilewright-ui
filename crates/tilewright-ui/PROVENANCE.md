@@ -19,8 +19,13 @@ marker constants, and the display/committed position mapping in `snapshot` and
 commit `fb5ac4159faae0c4a222e0d2d3a1e1b0670c7af8` of
 `seraphinastudios/tilewright-editor` (Copyright 2026 Seraphina Studios,
 SPDX-License-Identifier: MIT). Adaptations: `ToolError` becomes
-`UiError::LimitExceeded` and `UiError::InvalidInput`, the predicate is public
-as `refuses_single_line`, and the editor's English `stored_break_hint` is left
-to hosts. `tests/stored_breaks.rs` is written for this crate's API; its cases
-follow the intent of the editor's `tests/stored_breaks.rs` and
-`tests/text_input.rs` at that commit.
+`UiError::RefusedText`, `UiError::LimitExceeded` and `UiError::InvalidInput`
+(refused characters now have their own status, checked before the budget), the
+predicate is public as `refuses_single_line`, and the editor's English
+`stored_break_hint` is left to hosts. `TextInputSnapshot::step_visual` is new
+here. `tests/stored_breaks.rs` is adapted from the editor's
+`crates/tilewright-editor-ui/tests/stored_breaks.rs` and
+`crates/tilewright-editor-ui/tests/text_input.rs` at that commit (same
+organization, MIT): the class table, the round-trip and preedit-mapping
+checks and their coordinate tables come from there, rewritten for this
+crate's API, with new cases for this crate's `Ui`, statuses and budget.
