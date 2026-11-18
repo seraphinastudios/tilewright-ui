@@ -25,6 +25,12 @@ ALLOWED = {
 }
 
 
+# The only packages published, all to crates.io, in this dependency order
+# (docs/RELEASING.md). Every other package, including a new one, must set
+# publish = false until a reviewed change adds it here.
+PUBLISHED = ("tilewright-ui", "tilewright-app", "tilewright-ui-render")
+
+
 # The browser example runs an installed wasm-bindgen CLI that must equal the
 # library pin exactly. These files name that CLI version by hand.
 WASM_BINDGEN_CLI = ("examples/web/build.sh", "examples/web/README.md")
@@ -61,6 +67,7 @@ def check(root):
     errors = []
     workspace = tomllib.loads((root / "Cargo.toml").read_text())
     inherited = workspace.get("workspace", {}).get("dependencies", {})
+    workspace_version = workspace.get("workspace", {}).get("package", {}).get("version", "")
     if "patch" in workspace or "replace" in workspace:
         errors.append("Cargo.toml: committed dependency overrides are forbidden")
     for alias, entry in inherited.items():
@@ -100,8 +107,14 @@ def check(root):
         if name not in ALLOWED:
             errors.append(f"{prefix}: package {name} has no reviewed dependency policy")
             continue
-        if data["package"].get("publish") is not False:
-            errors.append(f"{prefix}: prototype packages must set publish = false")
+        publish = data["package"].get("publish")
+        if name in PUBLISHED:
+            if publish != ["crates-io"]:
+                errors.append(f'{prefix}: {name} must set publish = ["crates-io"]')
+            if data["package"].get("version") != {"workspace": True}:
+                errors.append(f"{prefix}: {name} must take the workspace version")
+        elif publish is not False:
+            errors.append(f"{prefix}: {name} is not published and must set publish = false")
         if "patch" in data or "replace" in data:
             errors.append(f"{prefix}: dependency overrides are forbidden")
         for alias, spec in tables(data):
@@ -122,6 +135,10 @@ def check(root):
             if any(key in spec for key in ("git", "branch", "rev", "tag", "registry")):
                 errors.append(f"{prefix}: {alias} must use the reviewed crates.io or local workspace source")
             if dependency in packages:
+                if name in PUBLISHED and dependency not in PUBLISHED:
+                    errors.append(f"{prefix}: published {name} cannot depend on unpublished {dependency}")
+                if name in PUBLISHED and spec.get("version") != f"={workspace_version}":
+                    errors.append(f"{prefix}: {alias} must require exactly ={workspace_version}")
                 actual = (base_dir / spec.get("path", "")).resolve()
                 if "path" not in spec or actual != packages[dependency]:
                     errors.append(f"{prefix}: {alias} must resolve to the local workspace package")
@@ -133,7 +150,7 @@ def check(root):
                     errors.append(f"{prefix}: external dependency {alias} needs one exact version")
                 if dependency in RENDERER and version != RENDERER_VERSION:
                     errors.append(f"{prefix}: renderer dependencies must retain {RENDERER_VERSION}")
-    for name in ("tilewright-ui", "tilewright-app", "tilewright-ui-render"):
+    for name in PUBLISHED:
         if name not in packages:
             errors.append(f"missing required package {name}")
             continue
@@ -153,7 +170,7 @@ def main():
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print("Dependency boundaries, exact sources, unpublished packages and unsafe policy passed.")
+    print("Dependency boundaries, exact sources, the published set and unsafe policy passed.")
     return 0
 
 

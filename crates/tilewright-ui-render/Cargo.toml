@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["tilewright", "ui", "renderer", "text"]
 categories = ["gui", "rendering", "game-development"]
 version.workspace = true
-publish = false
+publish = ["crates-io"]
 
 [dependencies]
 tilewright-ui.workspace = true

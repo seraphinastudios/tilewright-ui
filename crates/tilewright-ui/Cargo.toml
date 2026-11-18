@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["tilewright", "ui", "widgets", "text-input", "ime"]
 categories = ["gui", "text-processing", "game-development"]
 version.workspace = true
-publish = false
+publish = ["crates-io"]
 
 [dependencies]
 unicode-segmentation.workspace = true
