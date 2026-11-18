@@ -24,7 +24,7 @@ name: Publish crates
 # nothing; afterwards crates.io's index must list the attested checksums. A
 # difference that appears only at upload time is therefore found only once
 # the version is public (docs/RELEASING.md). With nothing left to upload, a
-# publish run with trusted publishing only exchanges the token: a canary.
+# publish run with trusted publishing only exchanges the token: a final check run.
 
 on:
   workflow_dispatch:
@@ -125,7 +125,7 @@ jobs:
 
       - name: Exchange the job's OIDC token for a crates.io token
         id: auth
-        # Also with nothing to upload: a canary run that proves the environment
+        # Also with nothing to upload: a final check run that proves the environment
         # and at least one trusted publisher (docs/CRATE-FIRST-PUBLICATION.md).
         if: inputs.credential == 'trusted-publishing'
         uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6

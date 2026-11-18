@@ -1,9 +1,11 @@
 """The publish workflow's checks, with git local and every service faked."""
 import argparse
 import hashlib
+import http.client
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +22,13 @@ DIGESTS = {name: f"{index:064x}" for index, name in enumerate(CRATES)}
 REPOSITORY = "seraphinastudios/tilewright-ui"
 
 
+class Truncated(io.BytesIO):
+    """A body whose connection drops mid-read."""
+
+    def read(self, *args):
+        raise http.client.IncompleteRead(b'{"vers"')
+
+
 class Index(unittest.TestCase):
     def test_paths(self):
         self.assertEqual(publish.index_path("tilewright-ui"), "ti/le/tilewright-ui")
@@ -33,6 +42,8 @@ class Index(unittest.TestCase):
                 raise error
             if status != 200:
                 raise urllib.error.HTTPError(request.full_url, status, "", {}, io.BytesIO(b""))
+            if isinstance(raw, io.BytesIO):
+                return raw
             return io.BytesIO(raw if raw is not None else "\n".join(json.dumps(line) for line in lines).encode())
         return open_
 
@@ -45,7 +56,9 @@ class Index(unittest.TestCase):
     def test_failures_are_never_read_as_missing(self):
         unavailable = [self.opener(503), self.opener(429), self.opener(error=urllib.error.URLError("down")),
                        self.opener(error=TimeoutError()), self.opener(raw=b"<html>captive</html>"),
-                       self.opener(raw=b"[1]"), self.opener(raw=b"\xff")]
+                       self.opener(raw=b"[1]"), self.opener(raw=b"\xff"),
+                       self.opener(error=http.client.IncompleteRead(b"{")),
+                       self.opener(error=http.client.BadStatusLine("x")), self.opener(raw=Truncated())]
         for opener in unavailable:
             with self.assertRaises(publish.Unavailable):
                 publish.registry("tilewright-ui", "0.1.0", opener)
@@ -102,7 +115,7 @@ class Environment(unittest.TestCase):
     def reader(self, environment=GOOD, policies=MAIN):
         def read(path):
             if environment is None:
-                raise subprocess.CalledProcessError(1, "gh")
+                raise subprocess.CalledProcessError(1, "gh", stderr="gh: Not Found (HTTP 404)\n")
             return policies if path.endswith("deployment-branch-policies") else environment
         return read
 
@@ -123,6 +136,25 @@ class Environment(unittest.TestCase):
             with self.assertRaisesRegex(Refused, "crates-io-release"):
                 publish.check_environment(REPOSITORY, read)
 
+    def failing(self, stderr):
+        def read(path):
+            raise subprocess.CalledProcessError(1, "gh", stderr=stderr)
+        return read
+
+    def test_missing_environment_is_told_apart_from_other_failures(self):
+        with self.assertRaisesRegex(Refused, r"does not exist \(gh: Not Found \(HTTP 404\)\): create it as step 2"):
+            publish.check_environment(REPOSITORY, self.failing("gh: Not Found (HTTP 404)\n"))
+        for stderr in ("gh: Resource not accessible by integration (HTTP 403)\n", "gh: Bad Gateway (HTTP 502)", None):
+            with self.assertRaisesRegex(Refused, "could not read the environment .*run again once") as caught:
+                publish.check_environment(REPOSITORY, self.failing(stderr))
+            if stderr:
+                self.assertIn(stderr.split("(")[0].strip(), str(caught.exception))
+
+        def garbled(path):
+            raise ValueError("not JSON")
+        with self.assertRaisesRegex(Refused, "unreadable .*run again once"):
+            publish.check_environment(REPOSITORY, garbled)
+
 
 class Verify(unittest.TestCase):
     """verify() against a local repository tagged v0.1.0 and faked services."""
@@ -140,6 +172,8 @@ class Verify(unittest.TestCase):
         self.git("add", "Cargo.toml")
         self.git("commit", "-q", "-m", "feat: start")
         self.git("tag", "v0.1.0")
+        self.base = Path(directory.name)
+        self.tree = self.worktree("v0.1.0")
         self.work = Path(directory.name) / "work"
         cwd = os.getcwd()
         os.chdir(self.root)
@@ -159,10 +193,16 @@ class Verify(unittest.TestCase):
         self.states = {name: None for name in CRATES}
 
     def git(self, *args):
-        subprocess.run(("git", "-C", str(self.root)) + args, check=True, capture_output=True)
+        return subprocess.run(("git", "-C", str(self.root)) + args, check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    def worktree(self, ref):
+        path = self.base / f"tree-{ref.replace('/', '-')}"
+        self.git("worktree", "add", "-q", "--detach", str(path), f"{ref}^{{commit}}")
+        return path
 
     def run_(self, *args, cwd=None, env=None):
-        self.calls.append(args[:3])
+        self.calls.append(args)
         if args[:3] == ("gh", "release", "download"):
             target = Path(args[args.index("-D") + 1])
             for name, data in self.files.items():
@@ -181,12 +221,12 @@ class Verify(unittest.TestCase):
             return self.policies
         if "/environments/" in path:
             if self.environment is None:
-                raise subprocess.CalledProcessError(1, "gh")
+                raise subprocess.CalledProcessError(1, "gh", stderr="gh: Not Found (HTTP 404)")
             return self.environment
         return self.release
 
     def verify(self, operation="verify", mode="first-publication-token"):
-        args = argparse.Namespace(tag="v0.1.0", tree=str(self.root), work=str(self.work), mode=mode,
+        args = argparse.Namespace(tag="v0.1.0", tree=str(self.tree), work=str(self.work), mode=mode,
                                   operation=operation)
         return publish.verify(args, run=self.run_, index=lambda name, version: self.states[name], read=self.read)
 
@@ -201,11 +241,64 @@ class Verify(unittest.TestCase):
         self.assertIn("admits only main", message)
         self.assertIn("Not tested by a verify run", message)
 
+    def test_provenance_is_pinned_to_release_yml_on_main_at_the_tagged_commit(self):
+        self.verify()
+        revision = self.git("rev-parse", "v0.1.0^{commit}")
+        attestations = [call for call in self.calls if call[:3] == ("gh", "attestation", "verify")]
+        self.assertEqual([Path(call[3]).name for call in attestations], [f"{name}-0.1.0.crate" for name in CRATES])
+        for call in attestations:
+            self.assertEqual(call[4:], (
+                "--repo", REPOSITORY,
+                "--cert-identity",
+                f"https://github.com/{REPOSITORY}/.github/workflows/release.yml@refs/heads/main",
+                "--source-ref", "refs/heads/main", "--source-digest", revision, "--deny-self-hosted-runners"))
+        package = [call for call in self.calls if call[:2] == ("cargo", "package")]
+        self.assertEqual(package, [("cargo", "package", "--locked", "--no-verify",
+                                    *[option for name in CRATES for option in ("-p", name)])])
+
+    def test_a_tag_off_main_is_refused(self):
+        self.git("checkout", "-q", "-b", "side")
+        self.git("commit", "-q", "--allow-empty", "-m", "feat: side")
+        self.git("tag", "v0.2.0")
+        self.git("checkout", "-q", "main")
+        args = argparse.Namespace(tag="v0.2.0", tree=str(self.worktree("v0.2.0")), work=str(self.work),
+                                  mode="trusted-publishing", operation="verify")
+        with self.assertRaisesRegex(Refused, "v0.2.0 is not on main"):
+            publish.verify(args, run=self.run_, index=None, read=self.read)
+        self.assertEqual(self.calls, [])
+
+    def test_a_tree_that_is_not_the_tag_is_refused(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "feat: later")
+        self.tree = self.worktree("main")
+        with self.assertRaisesRegex(Refused, "is not a checkout of v0.1.0"):
+            self.verify()
+        self.assertEqual(self.calls, [])
+
+    def test_digests_are_compared_in_full(self):
+        file = "tilewright-ui-render-0.1.0.crate"
+        good = self.sums[file]
+        last = "0" if good[-1] != "0" else "1"
+        self.sums[file] = good[:-1] + last
+        with self.assertRaisesRegex(Refused, "SHA256SUMS"):
+            self.verify()
+        self.sums[file] = good
+        self.release["assets"] = [{**asset, "digest": f"sha256:{good[:-1]}{last}"} if asset["name"] == file else asset
+                                  for asset in self.release["assets"]]
+        self.work = self.work.with_name("work2")
+        with self.assertRaisesRegex(Refused, "asset digest"):
+            self.verify()
+        self.release["assets"] = [{**asset, "digest": f"sha256:{good}"} if asset["name"] == file else asset
+                                  for asset in self.release["assets"]]
+        self.repackaged["tilewright-ui-render"] = self.files["tilewright-ui-render"] + b" "
+        self.work = self.work.with_name("work3")
+        with self.assertRaisesRegex(Refused, "differs from the attested"):
+            self.verify()
+
     def test_environment_is_checked_first_for_both_operations(self):
         self.environment = None
         for operation in ("verify", "publish"):
             self.calls.clear()
-            with self.assertRaisesRegex(Refused, "missing or unreadable"):
+            with self.assertRaisesRegex(Refused, "does not exist"):
                 self.verify(operation)
             self.assertFalse([call for call in self.calls if call[0] != "read"])
         self.environment = {**Environment.GOOD, "can_admins_bypass": True}
@@ -244,7 +337,7 @@ class Verify(unittest.TestCase):
     def test_a_release_that_does_not_own_its_version_stops_before_any_check(self):
         self.git("commit", "-q", "--allow-empty", "-m", "fix: later")
         self.git("tag", "v0.2.0")
-        args = argparse.Namespace(tag="v0.2.0", tree=str(self.root), work=str(self.work),
+        args = argparse.Namespace(tag="v0.2.0", tree=str(self.worktree("v0.2.0")), work=str(self.work),
                                   mode="trusted-publishing", operation="publish")
         plan = publish.verify(args, run=self.run_, index=None, read=self.read)
         self.assertFalse(plan["owner"])
@@ -287,6 +380,50 @@ class Confirm(unittest.TestCase):
     def test_gives_up_with_a_clear_message(self):
         with self.assertRaisesRegex(Refused, "gave up waiting.*down"):
             self.confirm([publish.Unavailable("down")] * 4)
+
+
+class Upload(unittest.TestCase):
+    """upload.sh against a fake cargo that records its command lines."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.temp = Path(directory.name)
+        (self.temp / "release").mkdir()
+        bin_ = self.temp / "bin"
+        bin_.mkdir()
+        self.log = self.temp / "cargo.log"
+        (bin_ / "cargo").write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >>"{self.log}"\n')
+        (bin_ / "cargo").chmod(0o755)
+        self.env = {"PATH": f"{bin_}:{os.environ['PATH']}", "RUNNER_TEMP": str(self.temp),
+                    "CARGO_REGISTRY_TOKEN": "secret-token-value"}
+        self.script = Path(__file__).resolve().parent / "upload.sh"
+
+    def upload(self, pending, **env):
+        return subprocess.run(["bash", str(self.script)], env={**self.env, "PENDING": pending, **env},
+                              capture_output=True, text=True)
+
+    def calls(self):
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def test_publishes_in_order_without_the_token_on_a_command_line(self):
+        result = self.upload("tilewright-ui tilewright-app tilewright-ui-render")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls(), [f"publish --locked --no-verify -p {name}" for name in CRATES])
+        self.assertNotIn("secret-token-value", self.log.read_text())
+        self.assertNotIn("--token", self.script.read_text())
+
+    def test_refuses_a_name_outside_the_three_before_publishing_anything(self):
+        for pending in ("tilewright-ui evil", "tilewright-ui-renderx", "tilewright-*", "../x"):
+            result = self.upload(pending)
+            self.assertNotEqual(result.returncode, 0, pending)
+            self.assertEqual(self.calls(), [], pending)
+
+    def test_refuses_without_a_token(self):
+        result = self.upload("tilewright-ui", CARGO_REGISTRY_TOKEN="")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no crates.io token", result.stdout + result.stderr)
+        self.assertEqual(self.calls(), [])
 
 
 if __name__ == "__main__":

@@ -75,7 +75,7 @@ not own its crate version it only says which release does.
 Only an upload step receives a crates.io token. `--no-verify` builds
 nothing, so no dependency code runs in the job that can request an OIDC
 token. Dispatching again is safe: present crates are skipped, and a run with
-nothing to upload still exchanges the token, as a canary.
+nothing to upload still exchanges the token, as a final check run.
 
 The upload does not send the attested files themselves: `cargo publish`
 packages the tagged commit again. A separate packaging run on the same runner
@@ -139,7 +139,9 @@ repository breaks publication until all three publishers are set up again.
   pick up), or **a `v*` tag created by hand**: every later release stops at
   it. The tag ruleset has no bypass, so only the owner can start over, as in
   World: in the organization's ruleset "Tilewright 04 - Immutable release
-  tags", add `tilewright-ui` to the excluded repositories, delete the tag,
+  tags", add `tilewright-ui` to the excluded repositories, delete the tag (the
+  repository's **Tags** page, the tag's **⋯** menu, **Delete**; or
+  `gh api -X DELETE repos/seraphinastudios/tilewright-ui/git/refs/tags/vX.Y.Z`),
   remove the exclusion again; delete any local copy (`git tag -d vX.Y.Z`);
   then run the Release workflow on `main` (after merging the fix, if one was
   needed). Never create `v*` tags by hand.

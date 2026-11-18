@@ -15,6 +15,7 @@ reads a registry token. docs/RELEASING.md describes the workflow around it.
 """
 import argparse
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -66,7 +67,7 @@ def registry(name, version, opener=urllib.request.urlopen):
         if error.code >= 500 or error.code == 429:
             raise Unavailable(f"crates.io's index answered {error.code} for {name}") from None
         raise Refused(f"crates.io's index answered {error.code} for {name}") from None
-    except (urllib.error.URLError, TimeoutError, OSError) as error:
+    except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as error:
         raise Unavailable(f"crates.io's index did not answer for {name}: {error}") from None
     except (UnicodeDecodeError, ValueError):
         raise Unavailable(f"crates.io's index sent something other than an index file for {name}") from None
@@ -117,8 +118,16 @@ def check_environment(repository, read=gh_json):
     try:
         environment = read(f"repos/{repository}/environments/{ENVIRONMENT}")
         policies = read(f"repos/{repository}/environments/{ENVIRONMENT}/deployment-branch-policies")
-    except (subprocess.CalledProcessError, ValueError):
-        raise Refused(f"the environment {ENVIRONMENT} is missing or unreadable; see {CHECKLIST}") from None
+    except subprocess.CalledProcessError as error:
+        detail = " ".join(str(error.stderr or "").split()) or f"exit status {error.returncode}"
+        if "HTTP 404" in detail:
+            raise Refused(f"the environment {ENVIRONMENT} does not exist ({detail}): create it as step 2 of "
+                          f"{CHECKLIST} says") from None
+        raise Refused(f"could not read the environment {ENVIRONMENT} ({detail}): run again once; if it "
+                      f"repeats, ask (see {CHECKLIST})") from None
+    except ValueError:
+        raise Refused(f"GitHub sent something unreadable for the environment {ENVIRONMENT}: run again once; "
+                      f"if it repeats, ask (see {CHECKLIST})") from None
     rule = environment.get("deployment_branch_policy") or {}
     names = [(policy.get("name"), policy.get("type")) for policy in policies.get("branch_policies", [])]
     if environment.get("can_admins_bypass") is not False or rule != {
@@ -230,7 +239,9 @@ def confirm(plan, index=registry, sleep=time.sleep, delays=(5, 10, 15, 20, 30, 3
 def summary(plan):
     lines = [f"Checked: {item}." for item in plan.get("checked", [])]
     if plan.get("operation") == "verify" and plan["pending"]:
-        lines.append("Not tested by a verify run: the crates.io token, its exchange and the upload.")
+        lines.append("Not tested by a verify run: the crates.io token, its exchange, GitHub admitting the "
+                     "publish job to the environment, the publish job's own repackaging, the upload and the "
+                     "index confirmation.")
     return "\n".join([headline(plan), *lines])
 
 
