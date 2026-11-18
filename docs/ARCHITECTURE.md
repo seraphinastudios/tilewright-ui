@@ -46,7 +46,7 @@ Insert a shared panel at its actual z-position in the host widget tree, preservi
 
 New shared implementation is MIT. Reuse only materials with recorded compatible provenance; no GPL or proprietary consumer implementation is copied or adapted into this repository. Consumer behavior can be specified independently as generic requirements. Fonts/assets retain their own exact licenses, provenance and notices.
 
-The existing renderer source release and approved `0.6.0` package artifacts remain unchanged. This repository has an independent release sequence. During development, any necessary local renderer overrides stay task-local; production dependency manifests use immutable released versions. Initial source/package preparation does not authorize registry publication or imply a supported C ABI has already been frozen.
+This repository has a release sequence independent of the renderer's (see [RELEASING.md](RELEASING.md)). During development, any necessary local renderer overrides stay task-local; production dependency manifests use immutable released versions. Publishing the three Rust crates does not freeze or publish the C ABI.
 
 ## Delivery gates
 

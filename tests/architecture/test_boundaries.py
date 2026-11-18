@@ -15,13 +15,15 @@ class Boundaries(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
-        (self.root / "Cargo.toml").write_text('[workspace]\nmembers = []\n')
+        (self.root / "Cargo.toml").write_text(
+            '[workspace]\nmembers = []\n[workspace.package]\nversion = "0.1.0"\n')
         for name in ("tilewright-ui", "tilewright-app", "tilewright-ui-render", "tilewright-ui-ffi"):
             path = self.root / "crates" / name
             (path / "src").mkdir(parents=True)
             (path / "src/lib.rs").write_text('#![forbid(unsafe_code)]\n')
+            publish = '["crates-io"]\nversion.workspace = true' if name in POLICY.PUBLISHED else "false"
             (path / "Cargo.toml").write_text(
-                f'[package]\nname = "{name}"\npublish = false\n')
+                f'[package]\nname = "{name}"\npublish = {publish}\n')
 
     def add(self, text, name="tilewright-ui"):
         with (self.root / "crates" / name / "Cargo.toml").open("a") as out:
@@ -29,6 +31,49 @@ class Boundaries(unittest.TestCase):
 
     def test_minimal_graph(self):
         self.assertEqual(POLICY.check(self.root), [])
+
+    def test_exactly_three_crates_are_published(self):
+        self.assertEqual(POLICY.PUBLISHED, ("tilewright-ui", "tilewright-app", "tilewright-ui-render"))
+
+    def write(self, name, text):
+        (self.root / "crates" / name / "Cargo.toml").write_text(text)
+
+    def test_unpublished_package_cannot_be_published(self):
+        for publish in ('["crates-io"]', "true", '["other"]'):
+            self.write("tilewright-ui-ffi", f'[package]\nname = "tilewright-ui-ffi"\npublish = {publish}\n')
+            self.assertIn("crates/tilewright-ui-ffi/Cargo.toml: tilewright-ui-ffi is not published and must set publish = false",
+                          POLICY.check(self.root))
+
+    def test_publish_setting_is_required_by_default(self):
+        self.write("tilewright-ui-ffi", '[package]\nname = "tilewright-ui-ffi"\n')
+        self.assertTrue(any("must set publish = false" in e for e in POLICY.check(self.root)))
+
+    def test_new_package_is_refused(self):
+        path = self.root / "crates/tilewright-extra"
+        path.mkdir()
+        (path / "Cargo.toml").write_text('[package]\nname = "tilewright-extra"\npublish = ["crates-io"]\n')
+        self.assertTrue(any("no reviewed dependency policy" in e for e in POLICY.check(self.root)))
+
+    def test_published_crate_publishes_only_to_crates_io(self):
+        for publish in ("false", "true", '["crates-io", "other"]'):
+            self.write("tilewright-app", f'[package]\nname = "tilewright-app"\nversion.workspace = true\npublish = {publish}\n')
+            self.assertTrue(any('tilewright-app must set publish = ["crates-io"]' in e for e in POLICY.check(self.root)))
+
+    def test_published_crate_takes_the_workspace_version(self):
+        self.write("tilewright-app", '[package]\nname = "tilewright-app"\nversion = "0.1.0"\npublish = ["crates-io"]\n')
+        self.assertTrue(any("take the workspace version" in e for e in POLICY.check(self.root)))
+
+    def test_published_internal_edges_require_the_exact_version(self):
+        self.add('\n[dependencies]\ntilewright-ui = { path = "../tilewright-ui", version = "=0.1.0" }\n', "tilewright-app")
+        self.assertEqual(POLICY.check(self.root), [])
+        for version in ("", ', version = "0.1.0"', ', version = "=0.0.9"'):
+            self.write("tilewright-app", '[package]\nname = "tilewright-app"\nversion.workspace = true\npublish = ["crates-io"]\n'
+                       f'[dependencies]\ntilewright-ui = {{ path = "../tilewright-ui"{version} }}\n')
+            self.assertTrue(any("must require exactly =0.1.0" in e for e in POLICY.check(self.root)), version)
+
+    def test_published_crate_cannot_depend_on_unpublished_package(self):
+        self.add('\n[dependencies]\ntilewright-ui-ffi = { path = "../tilewright-ui-ffi", version = "=0.1.0" }\n', "tilewright-app")
+        self.assertTrue(any("cannot depend on unpublished tilewright-ui-ffi" in e for e in POLICY.check(self.root)))
 
     def test_target_dev_dependency_cannot_hide_network(self):
         self.add('\n[target.\'cfg(unix)\'.dev-dependencies]\nnet = { package = "reqwest", version = "=1.0.0" }\n')

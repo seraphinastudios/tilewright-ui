@@ -1,11 +1,12 @@
 # Package and release plan
 
-Nothing from this workspace is published yet. Every package has
-`publish = false`, and the repository has no release or publish workflow;
-declaring version `0.1.0` does not reserve a registry name. The renderer crates
+Nothing from this workspace is on crates.io yet. The owner approved
+publishing three crates on 2026-11-17; they set `publish = ["crates-io"]`, and
+every other package `publish = false`. Releases and publication run as
+[RELEASING.md](RELEASING.md) describes, once the owner has done the one-time
+steps in [CRATE-FIRST-PUBLICATION.md](CRATE-FIRST-PUBLICATION.md); until
+then, declaring version `0.1.0` does not reserve a registry name. The renderer crates
 are pinned at exactly `0.7.2` through a committed registry-only `Cargo.lock`.
-Renderer `0.6.0` and its immutable source release remain an independent,
-unchanged delivery.
 
 ## What will be published
 
@@ -26,12 +27,13 @@ patch version. They are published in dependency order: `tilewright-ui`, then
 `tilewright-app` and `tilewright-ui-render`.
 
 Publishing follows the model of `tilewright-world`. The owner publishes the
-first version of each new crate name herself, then adds a trusted publisher
-for each crate; after that, releases publish through trusted publishing only,
-with no stored token. The release and publish workflows, release notes and the
-owner's first-publication checklist are still to be added. The crate metadata,
-per-crate READMEs and the packaged licence file are in place, and CI tests the
-three crates on Linux and Windows.
+first version of each new crate name herself, from a browser, with a
+short-lived token used once by the publish workflow
+([CRATE-FIRST-PUBLICATION.md](CRATE-FIRST-PUBLICATION.md)), then adds a
+trusted publisher for each crate; after that, releases publish through trusted
+publishing only, with no stored token. CI packages the three crates with
+Cargo's verification build on every pull request and tests them on Linux and
+Windows.
 
 ## Renderer dependency provenance
 
@@ -91,16 +93,17 @@ reservation.
    revision. Report platform and accessibility limits explicitly.
 3. Verify standalone crate contents (`cargo package --list` shows each crate's
    sources, README, `LICENSE` and, where present, `PROVENANCE.md`), licenses,
-   provenance, dependency order, checksums and SBOMs. Font bytes remain separate licensed data with their
+   provenance, dependency order and checksums. Releases carry no SBOM yet; one would be
+   separate future work. Font bytes remain separate licensed data with their
    original notices; no application/game content enters the packages.
-4. Prepare a source release. C headers and native library assets are a separate,
+4. Cut a source release (`release.yml`). C headers and native library assets are a separate,
    later track. Rust package versions and the C ABI version have distinct
    compatibility contracts. The prototype currently negotiates ABI 2; no stable
    C release has been made.
-5. Review the exact new release policy, repository/producer identity, immutable
-   source assets and first-publication ownership flow. Existing renderer
-   publication tooling is bound to a different repository and must not be copied
-   or invoked as though it already authorizes this one.
+5. The release policy, producer identity, immutable source assets and
+   first-publication flow are this repository's own (`tools/release/`),
+   modelled on World's design. Renderer or World publication tooling is bound
+   to its own repository and is never invoked for this one.
 6. First publication of each new name and the trusted-publisher setup are owner
    operations, done from the first-publication checklist; credentials never
    belong in source or chat.

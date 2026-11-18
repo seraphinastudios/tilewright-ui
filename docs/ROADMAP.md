@@ -31,8 +31,9 @@ C/SDL and browser hosts. A broader widget catalog follows real consumer needs.
    published yet, so these may still change public APIs.
 3. Release readiness: release and publish workflows modelled on
    `tilewright-world`, release notes and the owner's first-publication
-   checklist. The owner then publishes the first versions and adds trusted
-   publishers.
+   checklist ([RELEASING.md](RELEASING.md),
+   [CRATE-FIRST-PUBLICATION.md](CRATE-FIRST-PUBLICATION.md)). The owner then
+   publishes the first versions and adds trusted publishers.
 4. After the first publication, the Tilewright editor adopts the shared field
    for one string field in its inspector, opt-in at first.
 
