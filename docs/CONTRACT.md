@@ -170,7 +170,9 @@ captures the configured attachment; acknowledge it only after the host's whole
 frame is successfully presented. External screen-transform changes require
 explicit invalidation even if local coordinates remain equal.
 
-`bind_field` atomically loads a bounded value while focused or unfocused. It
+`bind_field` atomically loads a bounded value while focused or unfocused.
+The value may contain stored line breaks and control characters (see
+[Single-line text](#single-line-text)); only its byte length can refuse it. It
 changes widget generation, retires focus/preedit and advances cancellation
 identity, while retaining pending immutable actions. Rebinding identical text
 also changes generation. Invalid text or exhausted identities leave the old
@@ -188,6 +190,31 @@ The C facade adds opt-in functions and sized structs while retaining ABI 2 and
 the existing layouts. A legacy-created Demo context continues to emit only
 chat actions. New field actions expose their binding identity through
 `twui_get_field_action`. See the installed header for exact buffer ownership.
+
+## Single-line text
+
+Every composer is single-line. New input never adds a line break, while a
+stored value that already holds one opens, displays and returns unchanged.
+
+| Case | Rule |
+| --- | --- |
+| Refused new input | Any control character (`char::is_control`: C0, DEL and C1, so LF, CR, tab, VT, FF, NEL, NUL), U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR. `refuses_single_line` is the predicate. |
+| Where refused | `TextCommit` (typing, host paste), `Preedit` and an IME commit, `ReplaceText`. The whole text is refused: nothing is stripped or partly inserted. |
+| What refusal looks like | `UiError::LimitExceeded` (C: `TWUI_LIMIT_EXCEEDED`), the same status as an insertion past `composer_bytes`. Text, selection, preedit and revisions are unchanged; a rejected IME commit keeps its composition. |
+| Not refused | Format characters such as ZWJ, ZWNJ, ZWSP and bidirectional marks, and the marker glyphs themselves typed as ordinary text. |
+| Opening a stored value | `TextInput::new` and `bind_field` accept refused characters losslessly. Only a value over the byte budget is refused (`LimitExceeded`). |
+| Display | `display_text` shows each stored character, or CR LF pair, as one marker grapheme: `⏎` (U+23CE) for LF, CR, CR LF, VT, FF, NEL and U+2028; `¶` (U+00B6) for U+2029; `→` (U+2192) for tab; `⬚` (U+2B1A) for any other control. A zero-width space (U+200B) is added beside a marker only when a prepended or combining neighbour would otherwise join its grapheme; it belongs to the marker and is never stored. A stored marker glyph looks the same as a marker but is not in `markers`. |
+| Marker positions | `TextInputSnapshot::markers` lists each marker in order: `source` (bytes in the committed text with any preedit spliced in), `display` (the whole unit in `display_text`, guards included) and `glyph` (the visible glyph). Renderers that style markers use these; the headless crate draws nothing. |
+| Caret, selection, deletion | A marker is one grapheme. A caret cannot sit inside a CR LF pair. Backspace or Delete beside a marker removes exactly its stored character (both bytes of CR LF). A selection over a marker covers the stored characters; hosts copy from `committed`. `display_selection` and the composition's `display_range` are in display coordinates; `committed_cursor` maps a display position back, and a position beside a guard maps to the stored character's edge on that side of the glyph. |
+| Composition | Preedit is spliced before marking, so markers around it keep their places and a combining preedit next to a marker gets a guard. Preedit can never hold a refused character. |
+| What the host receives | `committed`, `SubmitField` and the C copy functions carry the exact stored bytes, markers never. An untouched value round-trips byte for byte; edits elsewhere keep the stored breaks. |
+| Limits | `composer_bytes` counts committed bytes. `display_text` can be longer: a marker glyph is 2 or 3 bytes and up to two 3-byte guards may surround it, so size renderer text limits from `display_text`. |
+
+`mark_stored_breaks` applies the same display to any stored string, for
+example a read-only row. A host that describes a stored value ("contains 2
+line breaks") counts its markers' glyphs. A browser presenter that edits the
+whole value through `ReplaceText` cannot keep a stored break, since that
+path is new input; the browser example binds no field.
 
 ## Required regression cases
 

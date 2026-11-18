@@ -341,7 +341,10 @@ pub unsafe extern "C" fn twui_move_visual(
             if snapshot.composition.is_some() {
                 return Err(STALE);
             }
-            let cursor = text.move_visual(snapshot.selection.focus, motion);
+            // The layout holds the marked display text; map back to committed.
+            let cursor = snapshot
+                .committed_cursor(text.move_visual(snapshot.display_selection.focus, motion))
+                .map_err(ui_error)?;
             let selection = tilewright_ui::TextSelection {
                 anchor: if extend == 1 {
                     snapshot.selection.anchor
@@ -664,6 +667,41 @@ mod tests {
             assert_eq!(twui_ack_presented(context, &second.stamp), OK);
             assert_eq!(twui_get_ime_rect(context, &second.stamp, &mut rect), OK);
             assert!(rect.x >= 170.0 && rect.x < 470.0);
+            // Visual movement runs on the marked display text and lands on
+            // committed positions: each step crosses one stored character.
+            assert_eq!(
+                with_context(context, |engine| {
+                    engine.bind_field("a\nbc").map_err(app_error)?;
+                    engine
+                        .apply(tilewright_ui::Input::Focus(Some(tilewright_ui::COMPOSER)))
+                        .map_err(app_error)?;
+                    engine
+                        .apply(tilewright_ui::Input::Key(tilewright_ui::KeyEvent {
+                            physical: 82,
+                            key: tilewright_ui::Key::Other,
+                            pressed: true,
+                            repeat: false,
+                            platform_composing: false,
+                        }))
+                        .map_err(app_error)?;
+                    Ok(())
+                }),
+                OK
+            );
+            for expected in [3, 2, 1, 0] {
+                assert_eq!(twui_render_prepare_current(context, &mut second), OK);
+                assert_eq!(twui_ack_presented(context, &second.stamp), OK);
+                assert_eq!(twui_move_visual(context, &second.stamp, 82, 1, 0), OK);
+                let mut focus = usize::MAX;
+                assert_eq!(
+                    with_context(context, |engine| {
+                        focus = engine.ui().snapshot().composer.selection.focus.byte;
+                        Ok(())
+                    }),
+                    OK
+                );
+                assert_eq!(focus, expected);
+            }
             assert_eq!(twui_destroy(context), OK);
         }
     }

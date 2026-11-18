@@ -9,8 +9,9 @@ mod keys;
 mod text;
 use keys::KeyLedger;
 pub use text::{
-    CompositionSnapshot, TextAffinity, TextCursor, TextInput, TextInputSnapshot, TextSelection,
-    scalar_selection_bytes,
+    CONTROL_MARKER, CompositionSnapshot, DisplayMarker, LINE_BREAK_MARKER, PARAGRAPH_MARKER,
+    TAB_MARKER, TextAffinity, TextCursor, TextInput, TextInputSnapshot, TextSelection,
+    mark_stored_breaks, refuses_single_line, scalar_selection_bytes,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

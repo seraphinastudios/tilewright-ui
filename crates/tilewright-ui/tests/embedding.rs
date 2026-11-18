@@ -90,8 +90,6 @@ fn rebind_advances_all_identities_and_preserves_pending_action() {
     })
     .unwrap();
     let before = ui.snapshot();
-    assert_eq!(ui.bind_field("bad\ntext"), Err(UiError::LimitExceeded));
-    assert_eq!(ui.snapshot(), before);
     assert_eq!(
         ui.bind_field("x".repeat(ui.limits().composer_bytes + 1)),
         Err(UiError::LimitExceeded)
@@ -109,7 +107,10 @@ fn rebind_advances_all_identities_and_preserves_pending_action() {
     assert_eq!(after.composer.selection.focus.byte, "first".len());
     assert_eq!(ui.peek_actions().cloned(), old_action);
     let after_bind = after.clone();
-    assert_eq!(ui.bind_field("bad\ntext"), Err(UiError::LimitExceeded));
+    assert_eq!(
+        ui.bind_field("x".repeat(ui.limits().composer_bytes + 1)),
+        Err(UiError::LimitExceeded)
+    );
     assert_eq!(ui.snapshot(), after_bind);
     ui.apply(Input::Focus(Some(COMPOSER))).unwrap();
     assert_eq!(

@@ -57,7 +57,9 @@ static void embedded_field(void) {
     preedit.text = (const uint8_t *)"x"; preedit.text_len = 1;
     assert(apply(ctx, preedit) == TWUI_OK);
     twui_state focused = state(ctx);
-    assert(twui_bind_field(ctx, (const uint8_t *)"a\nb", 3, &widget) == TWUI_LIMIT_EXCEEDED);
+    char over[4097];
+    memset(over, 'x', sizeof over);
+    assert(twui_bind_field(ctx, (const uint8_t *)over, sizeof over, &widget) == TWUI_LIMIT_EXCEEDED);
     unchanged(focused, state(ctx));
     assert(twui_bind_field(ctx, (const uint8_t *)"new", 3, &widget) == TWUI_OK);
     twui_state rebound = state(ctx);
@@ -94,7 +96,7 @@ static void embedded_field(void) {
     widget.struct_size = sizeof widget;
     assert(twui_bind_field(ctx, NULL, 1, &widget) == TWUI_INVALID_ARGUMENT);
     assert(twui_bind_field(ctx, (const uint8_t *)"\xff", 1, &widget) == TWUI_INVALID_ARGUMENT);
-    assert(twui_bind_field(ctx, (const uint8_t *)"a\nb", 3, &widget) == TWUI_LIMIT_EXCEEDED);
+    assert(twui_bind_field(ctx, (const uint8_t *)over, sizeof over, &widget) == TWUI_LIMIT_EXCEEDED);
     unchanged(before, state(ctx));
     assert(twui_prepare_current(ctx, &frame) == TWUI_OK);
     assert(twui_ack_presented(ctx, &frame) == TWUI_OK);
@@ -118,6 +120,30 @@ static void embedded_field(void) {
     assert(twui_ack_presented(ctx, &frame) == TWUI_STALE);
     twui_stamp current = {0}; current.struct_size = sizeof current;
     assert(twui_get_displayed(ctx, &current) == TWUI_EMPTY);
+    assert(twui_destroy(ctx) == TWUI_OK);
+}
+
+/* A stored value with line breaks opens unchanged; new breaks are refused. */
+static void embedded_stored_breaks(void) {
+    twui_config cfg = TWUI_CONFIG_INIT;
+    twui_context *ctx = NULL;
+    assert(twui_create_with_composition(&cfg, TWUI_COMPOSITION_SINGLE_FIELD, &ctx) == TWUI_OK);
+    const char *stored = "a\r\nb\xe2\x80\xa8" "c";
+    twui_widget_ref widget = {0}; widget.struct_size = sizeof widget;
+    assert(twui_bind_field(ctx, (const uint8_t *)stored, strlen(stored), &widget) == TWUI_OK);
+    expect_text(ctx, stored);
+    toggle(ctx, TWUI_SET_FOCUS, 1);
+    twui_state before = state(ctx);
+    twui_input typed = input(ctx, TWUI_COMMIT);
+    typed.text = (const uint8_t *)"\xe2\x80\xa9"; typed.text_len = 3;
+    assert(apply(ctx, typed) == TWUI_LIMIT_EXCEEDED);
+    unchanged(before, state(ctx));
+    assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
+    twui_action action = {0}; action.struct_size = sizeof action;
+    assert(twui_peek_action(ctx, &action) == TWUI_OK);
+    uint8_t copy[16] = {0}; uint64_t required = 0;
+    assert(twui_copy_action(ctx, action.batch_id, copy, sizeof copy, &required) == TWUI_OK);
+    assert(required == strlen(stored) && memcmp(copy, stored, (size_t)required) == 0);
     assert(twui_destroy(ctx) == TWUI_OK);
 }
 
@@ -150,7 +176,7 @@ static void embedded_chat(void) {
 
 int main(void) {
     assert(legacy_abi_main() == 0);
-    embedded_field(); embedded_chat();
+    embedded_field(); embedded_stored_breaks(); embedded_chat();
     puts("embedded C ABI passed");
     return 0;
 }

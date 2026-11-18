@@ -45,8 +45,11 @@ typedef struct twui_config {
 } twui_config;
 #define TWUI_CONFIG_INIT { sizeof(twui_config), TWUI_ABI_VERSION, 4096, 128, 65536, 4096, 16, 3 }
 
-/* UTF-8 lengths are bytes, never NUL-terminated strings. Embedded NUL, newline
- * and other disallowed single-line controls are rejected by shared semantics.
+/* UTF-8 lengths are bytes, never NUL-terminated strings. New COMMIT/PREEDIT
+ * text holding any control character (NUL, newline, tab, ...), U+2028 or U+2029
+ * is refused whole with LIMIT_EXCEEDED and changes nothing; RECEIVE refuses
+ * controls. A value loaded with twui_bind_field may hold them: it is kept and
+ * copied back exactly, and drawn with one visible marker per stored break.
  * COMMIT/PREEDIT/RECEIVE use text+text_len. SELECT uses UTF-8 anchor/caret bytes. PREEDIT uses anchor/caret as
  * scalar start/length (UINT64_MAX means SDL unknown -1). Text/edit/preedit calls carry the target generation,
  * control epoch and text revision obtained from state; stale targets fail.
@@ -151,7 +154,9 @@ twui_status twui_create_with_composition(const twui_config *config, uint32_t com
  * invalidates displayed geometry immediately, before the next prepare/present.
  * Invalid size/reserved fields/geometry leave the previous attachment intact. */
 twui_status twui_set_layout(twui_context *context, const twui_layout *layout);
-/* Single-field only. Copies UTF-8 (empty is valid), replaces the draft atomically,
+/* Single-field only. Copies UTF-8 (empty is valid; stored line breaks and
+ * controls are kept; only text_len over composer_bytes is LIMIT_EXCEEDED),
+ * replaces the draft atomically,
  * advances generation/revision and retires focus/preedit/physical ownership.
  * Already queued actions retain their original identity and bytes. Obtain fresh
  * input targets from get_state; never relabel a delayed event with fresh values.

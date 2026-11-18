@@ -268,7 +268,12 @@ fn geometry_event(app: &mut App, event: &Event, window_id: u32, compiled: Option
                 Keycode::End => VisualMotion::End,
                 _ => return,
             };
-            let focus = editable.move_visual(snapshot.selection.focus, motion);
+            // The layout holds the marked display text; map back to committed.
+            let Ok(focus) = snapshot
+                .committed_cursor(editable.move_visual(snapshot.display_selection.focus, motion))
+            else {
+                return;
+            };
             let anchor = if keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD) {
                 snapshot.selection.anchor
             } else {
