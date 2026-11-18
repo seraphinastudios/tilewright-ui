@@ -39,6 +39,9 @@ pub enum Error {
     StaleSnapshot,
     IdentityCollision,
     LimitExceeded,
+    /// The lent text system issued this compiler's atlas ID a revision below
+    /// one it issued before: a different text system was lent.
+    TextSystemChanged,
     Text(TextError),
     Scene(tilewright_scene::Error),
 }
@@ -102,10 +105,19 @@ impl TextGeometry {
 /// and parses no font. A host that already owns a [`TextSystem`] passes it to
 /// [`UiCompiler::compile`]; the shared widgets are then shaped, measured and
 /// rasterized by exactly the engine, fonts and caches the host's own text uses.
-#[derive(Clone, Copy, Debug)]
+///
+/// Known limitation with `tilewright-render-ui` 0.7.1: a text system reuses an
+/// unchanged atlas identity only when its previous compile was for the same
+/// atlas ID. When the host's own text and this compiler alternate on one
+/// system, every compile issues a new atlas revision for unchanged bytes, so a
+/// GPU backend re-uploads both atlases on every redraw. A renderer patch
+/// release removes this; adoption by a host that redraws often waits for it.
+#[derive(Debug)]
 pub struct UiCompiler {
     namespace: Namespace,
     limits: UiLimits,
+    /// Revision and digest last issued for `namespace.atlas_resource`.
+    last_atlas: Option<(u64, Digest256)>,
 }
 
 /// Owns its own text system; for standalone hosts with no text of their own.
@@ -152,7 +164,11 @@ impl UiCompiler {
         {
             return Err(Error::InvalidNamespace);
         }
-        Ok(Self { namespace, limits })
+        Ok(Self {
+            namespace,
+            limits,
+            last_atlas: None,
+        })
     }
     /// Compile the exact layout retained by `App::prepare`. Integral logical
     /// dimensions and explicit physical dimensions apply DPI exactly once.
@@ -160,11 +176,15 @@ impl UiCompiler {
     /// `system` may be one the host also uses for its own text; this call only
     /// borrows it, and its fonts and `TextLimits` apply. Lend the same system
     /// on every call: atlas revisions rise per system, so a second system could
-    /// reissue an old revision of this namespace's atlas ID. That ID must
-    /// differ from every atlas ID the host compiles with the system itself.
+    /// reissue an old revision of this namespace's atlas ID. A lower revision
+    /// than one issued before is refused with [`Error::TextSystemChanged`].
+    ///
+    /// The namespace's atlas ID must be one the host can never compute for its
+    /// own atlases. [`CompiledFrame::compose`] rejects a host scene that uses
+    /// it with [`Error::IdentityCollision`].
     #[allow(clippy::too_many_lines)]
     pub fn compile(
-        &self,
+        &mut self,
         system: &mut TextSystem,
         snapshot: &UiSnapshot,
         layout: &Layout,
@@ -338,6 +358,19 @@ impl UiCompiler {
             self.namespace.atlas_resource,
             self.limits,
         )?;
+        if let Some(atlas) = compiled
+            .resources
+            .iter()
+            .find(|texture| texture.identity.id.0 == self.namespace.atlas_resource)
+        {
+            let issued = (atlas.identity.revision, atlas.identity.digest);
+            if self.last_atlas.is_some_and(|(revision, digest)| {
+                issued.0 < revision || (issued.0 == revision && issued.1 != digest)
+            }) {
+                return Err(Error::TextSystemChanged);
+            }
+            self.last_atlas = Some(issued);
+        }
         for (text, index) in texts.iter_mut().zip(text_indices) {
             text.layout = compiled
                 .layouts

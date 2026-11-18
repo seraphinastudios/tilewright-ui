@@ -31,13 +31,18 @@ and budgets alone and lends that system to each call, so fonts load once and
 the shared widgets shape exactly as the host's own text:
 
 ```rust,ignore
-let compiler = UiCompiler::new(namespace, UiLimits::default())?;
+let mut compiler = UiCompiler::new(namespace, UiLimits::default())?;
 let frame = compiler.compile(&mut host_text, &snapshot, &layout, physical_size)?;
 ```
 
-Its `atlas_resource` must differ from every atlas ID the host compiles its own
-text with. Fonts are supplied as explicit bytes and SHA-256
-digests. Reserve the two resource IDs for the engine's entire lifetime; retain
+Reserve its `atlas_resource` as an ID the host can never compute for its own
+atlases, and lend the same `TextSystem` on every call; a lower atlas revision
+from another system is refused. With `tilewright-render-ui` 0.7.1, alternating
+host and shared compiles on one system issue a new atlas revision each time, so
+a GPU backend re-uploads both atlases per redraw. A renderer patch release
+removes this known limitation; see `docs/CONTRACT.md` in the repository.
+
+Fonts are supplied as explicit bytes and SHA-256 digests. Reserve the two resource IDs for the engine's entire lifetime; retain
 each `CompiledFrame` while a frame is prepared, in flight or displayed.
 Namespaces are checked again when composing an existing world scene.
 
