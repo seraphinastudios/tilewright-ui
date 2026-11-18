@@ -376,7 +376,7 @@ mod tests {
         motion: u32,
         physical: u16,
         old: bool,
-    ) -> Vec<usize> {
+    ) -> Vec<tilewright_ui::TextCursor> {
         use tilewright_ui::{Input, Key, KeyEvent, TextCursor, TextSelection};
         let selection = TextSelection::caret(TextCursor::new(start));
         // SAFETY: the caller passes a live context; locals outlive the calls.
@@ -460,10 +460,10 @@ mod tests {
                         OK
                     );
                 }
-                let mut focus = usize::MAX;
+                let mut focus = TextCursor::new(usize::MAX);
                 assert_eq!(
                     with_context(context, |engine| {
-                        focus = engine.ui().snapshot().composer.selection.focus.byte;
+                        focus = engine.ui().snapshot().composer.selection.focus;
                         Ok(())
                     }),
                     OK
@@ -823,12 +823,42 @@ mod tests {
             .enumerate()
             {
                 let physical = 90 + 2 * index as u16;
-                let old = presses(context, value, start, motion, physical, true);
-                let new = presses(context, value, start, motion, physical + 1, false);
+                let bytes = |cursors: Vec<tilewright_ui::TextCursor>| -> Vec<usize> {
+                    cursors.into_iter().map(|cursor| cursor.byte).collect()
+                };
+                let old = bytes(presses(context, value, start, motion, physical, true));
+                let new = bytes(presses(context, value, start, motion, physical + 1, false));
                 let end = if start == 0 { value.len() } else { 0 };
                 assert!(new.contains(&end), "{value:?} trapped: {new:?}");
                 for position in &old {
                     assert!(new.contains(position), "{value:?}: {old:?} -> {new:?}");
+                }
+            }
+            // Without markers the extra step never fires: a move of the
+            // affinity alone at a direction boundary is a real stop.
+            {
+                use tilewright_ui::{TextAffinity::*, TextCursor};
+                let stop = |byte, affinity| TextCursor { byte, affinity };
+                for (index, (value, motion, visits)) in [
+                    (
+                        "a\u{5d0}b",
+                        2,
+                        vec![stop(1, Before), stop(1, After), stop(4, Before)],
+                    ),
+                    (
+                        "שלום 5 עולם",
+                        1,
+                        vec![stop(8, After), stop(10, Before), stop(10, After)],
+                    ),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let physical = 100 + 2 * index as u16;
+                    let old = presses(context, value, 0, motion, physical, true);
+                    let new = presses(context, value, 0, motion, physical + 1, false);
+                    assert_eq!(new, old, "{value:?}");
+                    assert!(new.windows(3).any(|w| w == visits), "{value:?}: {new:?}");
                 }
             }
             assert_eq!(twui_destroy(context), OK);

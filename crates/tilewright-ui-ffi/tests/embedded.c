@@ -146,6 +146,14 @@ static void embedded_stored_breaks(void) {
         assert(apply(ctx, typed) == TWUI_REFUSED_TEXT);
         unchanged(before, state(ctx));
     }
+    /* The C exception: a span over composer_bytes is not read, so it is
+       LIMIT_EXCEEDED even though it holds a newline. */
+    static char long_break[4097];
+    memset(long_break, 'x', sizeof long_break); long_break[1] = '\n';
+    twui_input too_long = input(ctx, TWUI_COMMIT);
+    too_long.text = (const uint8_t *)long_break; too_long.text_len = sizeof long_break;
+    assert(apply(ctx, too_long) == TWUI_LIMIT_EXCEEDED);
+    unchanged(before, state(ctx));
     assert(apply(ctx, input(ctx, TWUI_SUBMIT)) == TWUI_OK);
     twui_action action = {0}; action.struct_size = sizeof action;
     assert(twui_peek_action(ctx, &action) == TWUI_OK);

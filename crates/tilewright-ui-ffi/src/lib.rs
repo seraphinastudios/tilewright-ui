@@ -1020,6 +1020,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_ui_error_has_its_own_c_status() {
+        // `ui_error` needs a wildcard arm (UiError is non_exhaustive); this
+        // keeps that arm from hiding a missed mapping.
+        let mut seen = std::collections::BTreeSet::new();
+        for error in tilewright_ui::UiError::ALL {
+            let status = ui_error(error);
+            if error == tilewright_ui::UiError::InvalidInput {
+                assert_eq!(status, INVALID_ARGUMENT);
+            } else {
+                assert_ne!(status, INVALID_ARGUMENT, "{error:?}");
+            }
+            assert!(seen.insert(status), "{error:?} shares status {status}");
+        }
+        assert_eq!(ui_error(tilewright_ui::UiError::RefusedText), REFUSED_TEXT);
+    }
+
+    #[test]
     fn panic_poison_and_reentry_are_fenced() {
         let app = App::new(tilewright_ui::Limits::default()).unwrap();
         let raw = Box::into_raw(Box::new(Context {

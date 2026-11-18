@@ -139,11 +139,16 @@ impl TextInputSnapshot {
     /// and the result maps back to committed text.
     ///
     /// A marker with a zero-width guard has two display positions for one
-    /// committed position. If a step only crosses the guard, the committed
-    /// caret would stay put and the next step would start from the same
-    /// place, so it could never pass. While the committed position has not
-    /// changed but the display cursor has, this steps again, at most twice
-    /// more. Fails with `InvalidInput` during composition.
+    /// committed position. A step that moves the display byte but not the
+    /// committed byte only crossed a guard, so it is repeated, at most twice
+    /// more; without that the caret could stall there for good. A move of
+    /// the affinity alone is a real visual stop (a direction boundary) and
+    /// is returned at once. In mixed-direction text a guard can still make
+    /// the caret alternate between two positions, as before. Fails with
+    /// `InvalidInput` during composition.
+    // Provisional: its home and signature may change before release (it may
+    // move to the render crate, where caret geometry is available).
+    #[doc(hidden)]
     pub fn step_visual(
         &self,
         mut step: impl FnMut(TextCursor) -> TextCursor,
@@ -159,9 +164,10 @@ impl TextInputSnapshot {
             if next == display {
                 break;
             }
+            let moved = next.byte != display.byte;
             display = next;
             result = self.committed_cursor(display)?;
-            if result.byte != start.byte {
+            if result.byte != start.byte || !moved {
                 break;
             }
         }

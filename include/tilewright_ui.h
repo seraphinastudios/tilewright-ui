@@ -50,12 +50,14 @@ typedef struct twui_config {
 /* UTF-8 lengths are bytes, never NUL-terminated strings. COMMIT, PREEDIT and
  * RECEIVE text holding any control character (NUL, newline, tab, ...), U+2028
  * or U+2029 is refused whole with REFUSED_TEXT and changes nothing; that check
- * comes before the byte budget, so text that is both too long and refused
- * returns REFUSED_TEXT. A value loaded with twui_bind_field may hold them: it
- * is kept and copied back exactly, and drawn with one marker per stored break.
- * The drawn text can be 3x the stored bytes; with the built-in renderer limit
- * of 65,536 text bytes, keep composer_bytes at or below 21,845 for single
- * fields that may hold stored controls, or every frame fails with RENDER_ERROR.
+ * comes before the remaining byte budget, so text that is both too long for it
+ * and refused returns REFUSED_TEXT. Exception: a span longer than composer_bytes
+ * (message_bytes for RECEIVE) is LIMIT_EXCEEDED without being read.
+ * A value loaded with twui_bind_field may hold them: it is kept and copied back
+ * exactly, and drawn with one marker per stored break. The drawn text can be 3x
+ * the stored bytes, and the renderer lays out at most 65,536 bytes of one text,
+ * so 21,845 is the ceiling for composer_bytes in a single field that may hold
+ * stored controls; above it such a value fails every frame with RENDER_ERROR.
  * COMMIT/PREEDIT/RECEIVE use text+text_len. SELECT uses UTF-8 anchor/caret bytes. PREEDIT uses anchor/caret as
  * scalar start/length (UINT64_MAX means SDL unknown -1). Text/edit/preedit calls carry the target generation,
  * control epoch and text revision obtained from state; stale targets fail.
