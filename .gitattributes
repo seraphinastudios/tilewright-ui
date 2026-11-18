@@ -1,3 +1,5 @@
 # The font inventory is checked by its exact SHA-256; never convert its line
 # endings (a Windows checkout with core.autocrlf would otherwise change it).
 tools/unicode-font-pack.json -text
+# Shell scripts keep LF so Git Bash can run them from a Windows checkout.
+*.sh text eol=lf
