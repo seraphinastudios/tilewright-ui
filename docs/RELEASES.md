@@ -3,7 +3,7 @@
 Nothing from this workspace is published yet. Every package has
 `publish = false`, and the repository has no release or publish workflow;
 declaring version `0.1.0` does not reserve a registry name. The renderer crates
-are pinned at exactly `0.7.1` through a committed registry-only `Cargo.lock`.
+are pinned at exactly `0.7.2` through a committed registry-only `Cargo.lock`.
 Renderer `0.6.0` and its immutable source release remain an independent,
 unchanged delivery.
 
@@ -13,7 +13,7 @@ unchanged delivery.
 | --- | --- | --- |
 | `tilewright-ui` | Unicode segmentation | Planned, first version `0.1.0` |
 | `tilewright-app` | `tilewright-ui` | Planned, first version `0.1.0` |
-| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.7.1` APIs | Planned, first version `0.1.0` |
+| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.7.2` APIs | Planned, first version `0.1.0` |
 | `tilewright-ui-ffi` | `tilewright-ui`, `tilewright-app`; optional UI renderer | Not published; the C library and header are a separate track |
 
 The native demo (`tilewright-ui-native-demo`) and the browser adapter
@@ -35,24 +35,30 @@ three crates on Linux and Windows.
 
 ## Renderer dependency provenance
 
-Renderer `0.7.1` was published from immutable source release `v1.27.0`
-(release ID `444354466`), revision
-`d2a767c602be942b6d8964ae238d3618fad294f5`. Its `crate-release.json` SHA-256 is
-`b1d4c14e6e6c9df5e64f0350c2cf5ddb8a2092ebca3760384d57c70b34770bcc`.
+Renderer `0.7.2` was published from immutable source release `v1.29.0`
+(release ID `449670579`), revision
+`f1afc4d25f1c0b6203bba47135000c4f6c8d72ea`. Its `crate-release.json` SHA-256 is
+`de8c7893e7d52deb52a35c6cdf4639ce13dcfe1eb2ac90554e82e099ba35d41c`.
 All eight released crate archive digests match the release manifest, its
 `SHA256SUMS` and the crates.io sparse-index checksums, with owner `zoeyrose`
-(registry user ID `437663`). Every intra-family dependency requires `=0.7.1`.
+(registry user ID `437663`). Every intra-family dependency requires `=0.7.2`.
 
-The lock contains seven family packages, all from crates.io at `0.7.1` with the
+The lock contains seven family packages, all from crates.io at `0.7.2` with the
 verified archive checksums. The eighth, `tilewright-render-sdl3`, is pinned in
 workspace dependencies but unused by current workspace packages; its index
 entry requires `sdl3 ^0.22.1`, matching the native example's direct `=0.22.1`.
 
-`0.7.1` changes no public API and no rendering. It adds tests inside the
-crates, bounds the ground-grid tile side in `tilewright-render-testkit` (an
-out-of-range side now returns `LimitExceeded`) and adds comments. Its external
-dependency requirements and features equal `0.7.0`'s, so the lockfile delta is
-the seven family versions and checksums alone.
+`0.7.2` changes no public API and no rendering. In `tilewright-render-ui`, a
+text system now keeps an unchanged atlas's exact identity per atlas ID,
+whatever other IDs were compiled in between, for a small fixed number of
+recently used IDs; `0.7.1` kept it only when the previous compile used the same
+ID. No other crate's source changes. Its external dependency requirements and
+features equal `0.7.1`'s, so the lockfile delta is the seven family versions and
+checksums alone.
+
+`0.7.1` changed no public API and no rendering. It added tests inside the
+crates, bounded the ground-grid tile side in `tilewright-render-testkit` (an
+out-of-range side returns `LimitExceeded`) and added comments.
 
 The earlier update from `0.6.2` to `0.7.0` skipped the intermediate `0.6.3`
 cohort. `0.6.3` moved `tilewright-render-ui` text layout from cosmic-text to
@@ -77,7 +83,7 @@ reservation.
 
 ## Required evidence before publication
 
-1. The committed lock resolves the published renderer `0.7.1` crates from the
+1. The committed lock resolves the published renderer `0.7.2` crates from the
    registry. A task-local renderer patch or generated candidate lock is not
    registry-consumer evidence.
 2. Reconcile implemented APIs with the documented contracts; retain independent

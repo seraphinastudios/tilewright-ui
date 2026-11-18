@@ -473,11 +473,9 @@ fn alternating_host_and_field_compiles_stay_consistent() {
         .compile(&mut host, &snapshot, &layout, [640, 400])
         .unwrap();
     assert!(field_atlas(&again) >= field_atlas(&lent));
-    // Known limitation of tilewright-render-ui 0.7.1: one `last_atlas` slot
-    // per text system, so alternating atlas IDs reissue unchanged bytes under
-    // a new revision and a GPU backend re-uploads them on every redraw. When
-    // the renderer keeps one slot per atlas ID, flip this to `==`.
-    assert!(field_atlas(&again) > field_atlas(&lent));
+    // Alternating host and field compiles on one lent system keep each
+    // unchanged atlas's identity, so nothing is re-uploaded.
+    assert_eq!(field_atlas(&again), field_atlas(&lent));
     for frame in [&lent, &again] {
         assert_eq!(
             pixels,
