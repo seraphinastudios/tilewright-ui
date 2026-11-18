@@ -25,7 +25,18 @@ It targets `tilewright-render-ui =0.7.1` for Unicode shaping, selection geometry
 glyph rasterization and immutable resources. It does not create widget bounds.
 
 Construct `UiRenderer` with a verified `FontPack`, text/paint budgets and a
-caller-reserved `Namespace`. Fonts are supplied as explicit bytes and SHA-256
+caller-reserved `Namespace`; it owns its own `TextSystem`. A host that already
+has a `TextSystem` for its own text constructs `UiCompiler` from the namespace
+and budgets alone and lends that system to each call, so fonts load once and
+the shared widgets shape exactly as the host's own text:
+
+```rust,ignore
+let compiler = UiCompiler::new(namespace, UiLimits::default())?;
+let frame = compiler.compile(&mut host_text, &snapshot, &layout, physical_size)?;
+```
+
+Its `atlas_resource` must differ from every atlas ID the host compiles its own
+text with. Fonts are supplied as explicit bytes and SHA-256
 digests. Reserve the two resource IDs for the engine's entire lifetime; retain
 each `CompiledFrame` while a frame is prepared, in flight or displayed.
 Namespaces are checked again when composing an existing world scene.

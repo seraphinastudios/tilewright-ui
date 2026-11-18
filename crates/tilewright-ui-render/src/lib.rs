@@ -9,13 +9,14 @@
 mod resources;
 use std::{collections::HashSet, fmt, sync::Arc};
 use tilewright_render_resources::ResourceProvider;
+use tilewright_render_ui::TextError;
+pub use tilewright_render_ui::TextSystem;
 pub use tilewright_render_ui::UiLimits;
 /// Verified font-pack metadata for explicit host loading; contains no font bytes.
 pub use tilewright_render_ui::unicode_fonts;
 pub use tilewright_render_ui::{
     FontBlob, FontPack, TextAffinity, TextCursor, TextLimits, UnicodeLayout, VisualMotion,
 };
-use tilewright_render_ui::{TextError, TextSystem};
 use tilewright_render_ui::{
     UiDisplayList, UiPaint, UiPrimitive, UiRect, UiTexture, UiViewport, builtin,
 };
@@ -95,11 +96,23 @@ impl TextGeometry {
     }
 }
 
-/// Owns bounded shaping scratch. Frames own immutable atlas bytes and layouts.
-pub struct UiRenderer {
-    text: TextSystem,
+/// Compiles frames with a text system the host lends for each call.
+///
+/// It holds no fonts, shaping caches or glyph rasters, so constructing it reads
+/// and parses no font. A host that already owns a [`TextSystem`] passes it to
+/// [`UiCompiler::compile`]; the shared widgets are then shaped, measured and
+/// rasterized by exactly the engine, fonts and caches the host's own text uses.
+#[derive(Clone, Copy, Debug)]
+pub struct UiCompiler {
     namespace: Namespace,
     limits: UiLimits,
+}
+
+/// Owns its own text system; for standalone hosts with no text of their own.
+/// Frames own immutable atlas bytes and layouts.
+pub struct UiRenderer {
+    text: TextSystem,
+    compiler: UiCompiler,
 }
 impl UiRenderer {
     pub fn new(
@@ -108,17 +121,10 @@ impl UiRenderer {
         namespace: Namespace,
         limits: UiLimits,
     ) -> Result<Self, Error> {
-        if namespace.first_semantic == 0
-            || namespace.solid_resource == 0
-            || namespace.atlas_resource == 0
-            || namespace.solid_resource == namespace.atlas_resource
-        {
-            return Err(Error::InvalidNamespace);
-        }
+        let compiler = UiCompiler::new(namespace, limits)?;
         Ok(Self {
             text: TextSystem::new(fonts, font_limits)?,
-            namespace,
-            limits,
+            compiler,
         })
     }
     pub fn clear_cache(&mut self) {
@@ -126,9 +132,38 @@ impl UiRenderer {
     }
     /// Compile the exact layout retained by `App::prepare`. Integral logical
     /// dimensions and explicit physical dimensions apply DPI exactly once.
-    #[allow(clippy::too_many_lines)]
     pub fn compile(
         &mut self,
+        snapshot: &UiSnapshot,
+        layout: &Layout,
+        physical_size: [u32; 2],
+    ) -> Result<CompiledFrame, Error> {
+        self.compiler
+            .compile(&mut self.text, snapshot, layout, physical_size)
+    }
+}
+
+impl UiCompiler {
+    pub fn new(namespace: Namespace, limits: UiLimits) -> Result<Self, Error> {
+        if namespace.first_semantic == 0
+            || namespace.solid_resource == 0
+            || namespace.atlas_resource == 0
+            || namespace.solid_resource == namespace.atlas_resource
+        {
+            return Err(Error::InvalidNamespace);
+        }
+        Ok(Self { namespace, limits })
+    }
+    /// Compile the exact layout retained by `App::prepare`. Integral logical
+    /// dimensions and explicit physical dimensions apply DPI exactly once.
+    ///
+    /// `system` may be any text system, including one the host also uses for its
+    /// own text; this call only borrows it. Its `namespace.atlas_resource` must
+    /// differ from every atlas ID the host compiles with that text system.
+    #[allow(clippy::too_many_lines)]
+    pub fn compile(
+        &self,
+        system: &mut TextSystem,
         snapshot: &UiSnapshot,
         layout: &Layout,
         physical_size: [u32; 2],
@@ -196,7 +231,7 @@ impl UiRenderer {
                         FontRole::Body | FontRole::Button => 18.0,
                         FontRole::Composer => 20.0,
                     };
-                    let shaped = self.text.layout(text, size, None)?;
+                    let shaped = system.layout(text, size, None)?;
                     let editable = if let Some(revision) = text_revision {
                         if *widget != snapshot.composer_widget
                             || *revision != snapshot.composer.revision
@@ -292,7 +327,7 @@ impl UiRenderer {
                 return Err(Error::LimitExceeded);
             }
         }
-        let compiled = self.text.compile(
+        let compiled = system.compile(
             viewport,
             UiDisplayList {
                 primitives: &primitives,
