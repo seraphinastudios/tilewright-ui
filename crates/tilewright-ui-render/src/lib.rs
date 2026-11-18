@@ -157,9 +157,11 @@ impl UiCompiler {
     /// Compile the exact layout retained by `App::prepare`. Integral logical
     /// dimensions and explicit physical dimensions apply DPI exactly once.
     ///
-    /// `system` may be any text system, including one the host also uses for its
-    /// own text; this call only borrows it. Its `namespace.atlas_resource` must
-    /// differ from every atlas ID the host compiles with that text system.
+    /// `system` may be one the host also uses for its own text; this call only
+    /// borrows it, and its fonts and `TextLimits` apply. Lend the same system
+    /// on every call: atlas revisions rise per system, so a second system could
+    /// reissue an old revision of this namespace's atlas ID. That ID must
+    /// differ from every atlas ID the host compiles with the system itself.
     #[allow(clippy::too_many_lines)]
     pub fn compile(
         &self,
