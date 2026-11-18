@@ -156,7 +156,7 @@ def verify(args):
             raise Refused(f"{file} packaged from {args.tag} differs from the attested release asset")
     states = {name: registry(name, version) for name in CRATES}
     plan["pending"] = decide(version, plan["digests"], states, args.mode)
-    if plan["pending"] and args.operation == "publish":
+    if args.operation == "publish":
         check_environment(repository)
     return plan
 
@@ -203,7 +203,7 @@ def main(argv=None):
             message = summary(plan)
             if "GITHUB_OUTPUT" in os.environ:
                 with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-                    output.write(f"pending={' '.join(plan['pending'])}\n")
+                    output.write(f"pending={' '.join(plan['pending'])}\nowner={str(plan['owner']).lower()}\n")
         else:
             message = confirm(json.loads(Path(args.plan).read_text()))
     except (Refused, subprocess.CalledProcessError) as error:

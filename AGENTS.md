@@ -2,8 +2,10 @@
 
 This repository owns reusable MIT widget behavior and host-neutral application
 coordination. Read `docs/ARCHITECTURE.md` and `docs/CONTRACT.md` before changing
-interfaces. Public names and version numbers do not imply a stable or published
-release; packages remain unpublished until their release is explicitly approved.
+interfaces. The owner approved publishing `tilewright-ui`, `tilewright-app` and
+`tilewright-ui-render` to crates.io on 2026-11-17 (0.x, see `docs/RELEASING.md`);
+every other package stays `publish = false`. Publishing another package, a 1.0
+version, the C library or a web package needs her approval first.
 
 - `tilewright-ui` owns headless widget/text/focus semantics. No SDL, DOM, GPU,
   network, filesystem, game protocol, editor document or consumer dependency.
@@ -27,8 +29,11 @@ release; packages remain unpublished until their release is explicitly approved.
   system-font search, runtime download or arbitrary project execution.
 - Pin Rust, dependency graph and Actions; keep renderer requirements registry
   based. Development overrides stay outside committed manifests/config/locks.
-- Preserve the independent renderer 0.6.0 release and its immutable artifacts.
-  New names need their own reviewed release/ownership/publication plan.
+- Releases and crates.io uploads run only through `release.yml` and
+  `publish-crate.yml`. Agents never publish, run `cargo publish` or
+  `cargo login`, create tokens, dispatch publication or change environments
+  and trusted publishers; those are owner steps (`docs/CRATE-FIRST-PUBLICATION.md`).
+  Released tags and assets are immutable; fix forward with a new version.
 
 Use owned worktrees and preserve other workers' edits. Every PR opens as draft,
 has an intent brief and fresh-context independent review, then uses the installed

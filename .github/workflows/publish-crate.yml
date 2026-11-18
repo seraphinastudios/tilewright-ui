@@ -20,7 +20,8 @@ name: Publish crates
 # release.yml on main at the tagged commit, and packaging that commit again
 # gives the same bytes. Each upload is `cargo publish --no-verify`, which
 # packages those same bytes and builds nothing; afterwards crates.io's
-# index must list the attested checksums.
+# index must list the attested checksums. With nothing left to upload, a
+# publish run with trusted publishing only exchanges the token: a canary.
 
 on:
   workflow_dispatch:
@@ -65,7 +66,7 @@ jobs:
       contents: read
       attestations: read
     outputs:
-      pending: ${{ steps.verify.outputs.pending }}
+      owner: ${{ steps.verify.outputs.owner }}
     steps:
       - name: Check out main with tags
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,7 +88,7 @@ jobs:
   publish:
     name: Publish to crates.io
     needs: verify
-    if: github.repository == 'seraphinastudios/tilewright-ui' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'publish' && needs.verify.outputs.pending != ''
+    if: github.repository == 'seraphinastudios/tilewright-ui' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'publish' && needs.verify.outputs.owner == 'true'
     # Admits only main. crates.io's trusted publishers name this workflow
     # file and this environment, so renaming either stops publication.
     environment: crates-io-release
@@ -118,7 +119,9 @@ jobs:
 
       - name: Exchange the job's OIDC token for a crates.io token
         id: auth
-        if: inputs.credential == 'trusted-publishing' && steps.verify.outputs.pending != ''
+        # Also with nothing to upload: a canary run that proves the environment
+        # and at least one trusted publisher (docs/CRATE-FIRST-PUBLICATION.md).
+        if: inputs.credential == 'trusted-publishing'
         uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
 
       - name: Upload with trusted publishing

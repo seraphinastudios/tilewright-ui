@@ -49,9 +49,11 @@ bash tools/check-c.sh cpu-prototype
 ```
 
 Preparation requires an absent output directory and verifies exact upstream
-bytes and OFL notices. Runtime does not discover or download fonts. Every
-package still sets `publish = false`, and the repository has no release or
-publish workflow yet; see the [release plan](docs/RELEASES.md).
+bytes and OFL notices. Runtime does not discover or download fonts. Only the
+three planned crates may be published, to crates.io; every other package sets
+`publish = false`. Each merge to `main` cuts a release, and the release that
+first carries a crate version publishes it; see [releasing](docs/RELEASING.md)
+and the owner's [first-publication checklist](docs/CRATE-FIRST-PUBLICATION.md).
 
 New implementation is MIT. See [provenance](PROVENANCE.md) for permitted source
 extractions and separately licensed font metadata. Game-specific code and data
