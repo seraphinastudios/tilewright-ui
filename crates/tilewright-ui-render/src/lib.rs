@@ -9,14 +9,20 @@
 mod resources;
 use std::{collections::HashSet, fmt, sync::Arc};
 use tilewright_render_resources::ResourceProvider;
-use tilewright_render_ui::TextError;
+// The root re-exports the renderer types needed to construct and drive
+// `UiRenderer`/`UiCompiler` and to read a layout. A host that composes its own
+// scene or reads frame internals (`SceneBundle`, `ResourceProvider`, `Quad`,
+// `UiViewport`, `TextError`, `tilewright_scene::Error`) uses the renderer
+// crates directly, at the same exact version. The renderer's own `TextCursor`
+// and `TextAffinity` are not re-exported: this crate's API uses
+// `tilewright_ui`'s types of those names, and `UnicodeLayout`'s methods take
+// the renderer's, from `tilewright-render-ui` directly.
 pub use tilewright_render_ui::TextSystem;
 pub use tilewright_render_ui::UiLimits;
 /// Verified font-pack metadata for explicit host loading; contains no font bytes.
 pub use tilewright_render_ui::unicode_fonts;
-pub use tilewright_render_ui::{
-    FontBlob, FontPack, TextAffinity, TextCursor, TextLimits, UnicodeLayout, VisualMotion,
-};
+pub use tilewright_render_ui::{FontBlob, FontPack, TextLimits, UnicodeLayout, VisualMotion};
+use tilewright_render_ui::{TextAffinity, TextCursor, TextError};
 use tilewright_render_ui::{
     UiDisplayList, UiPaint, UiPrimitive, UiRect, UiTexture, UiViewport, builtin,
 };
@@ -66,6 +72,7 @@ impl From<tilewright_scene::Error> for Error {
 
 /// Logical geometry from the exact shared layout used to paint the glyphs.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct TextGeometry {
     pub widget: WidgetRef,
     pub layout: UnicodeLayout,
@@ -92,13 +99,69 @@ impl TextGeometry {
             .caret(renderer_cursor(snapshot.display_selection.focus))?;
         intersect(translated(caret, self.origin), self.clip)
     }
-    pub fn move_visual(
+    /// One raw layout step in display coordinates. It does not skip a
+    /// marker's guard; hosts use [`TextGeometry::step_caret`].
+    fn move_visual(
         &self,
         cursor: tilewright_ui::TextCursor,
         motion: VisualMotion,
     ) -> tilewright_ui::TextCursor {
         neutral_cursor(self.layout.move_visual(renderer_cursor(cursor), motion))
     }
+    /// Moves the caret one visual step from `snapshot.display_selection.focus`
+    /// and returns the new focus in committed text, ready for
+    /// `Input::Selection` (keep `snapshot.selection.anchor` to extend).
+    ///
+    /// The layout holds `display_text`, where a stored line break or control
+    /// is one marker glyph. A marker with a zero-width guard has two display
+    /// positions for one committed position, so a step that moves the display
+    /// byte but not the committed byte only crossed the guard: it is repeated,
+    /// at most twice more (three layout steps in all), so the caret does not
+    /// stall there. A step that moves the affinity alone is a real visual stop
+    /// at a direction boundary and is returned at once, as is a step that does
+    /// not move. In some mixed-direction text a guard can still make the caret
+    /// alternate between two positions.
+    ///
+    /// Fails with `UiError::InvalidInput`, without stepping, while a
+    /// composition is active or when this text is not the editable one
+    /// (`snapshot` is `None`).
+    pub fn step_caret(
+        &self,
+        motion: VisualMotion,
+    ) -> Result<tilewright_ui::TextCursor, tilewright_ui::UiError> {
+        let snapshot = self
+            .snapshot
+            .as_ref()
+            .ok_or(tilewright_ui::UiError::InvalidInput)?;
+        step_visual(snapshot, |cursor| self.move_visual(cursor, motion))
+    }
+}
+
+/// The stepping loop behind [`TextGeometry::step_caret`]. `step` moves a
+/// display cursor one position; tests drive it with synthetic layouts.
+fn step_visual(
+    snapshot: &TextInputSnapshot,
+    mut step: impl FnMut(tilewright_ui::TextCursor) -> tilewright_ui::TextCursor,
+) -> Result<tilewright_ui::TextCursor, tilewright_ui::UiError> {
+    if snapshot.composition.is_some() {
+        return Err(tilewright_ui::UiError::InvalidInput);
+    }
+    let start = snapshot.selection.focus;
+    let mut display = snapshot.display_selection.focus;
+    let mut result = start;
+    for _ in 0..3 {
+        let next = step(display);
+        if next == display {
+            break;
+        }
+        let moved = next.byte != display.byte;
+        display = next;
+        result = snapshot.committed_cursor(display)?;
+        if result.byte != start.byte || !moved {
+            break;
+        }
+    }
+    Ok(result)
 }
 
 /// Compiles frames with a text system the host lends for each call.
@@ -401,10 +464,12 @@ impl UiCompiler {
 
 /// Can outlive the renderer and any of its later atlas revisions.
 pub struct CompiledFrame {
-    pub viewport: UiViewport,
-    pub quads: Vec<Quad>,
+    viewport: UiViewport,
+    quads: Vec<Quad>,
     pub text: Vec<TextGeometry>,
-    pub unsupported: usize,
+    // Unsupported renderer primitives; only the prototype tests read it.
+    #[cfg_attr(not(all(test, feature = "prototype")), allow(dead_code))]
+    unsupported: usize,
     resources: resources::Resources,
     namespace: Namespace,
 }
@@ -613,5 +678,7 @@ fn composition_rects(layout: &UnicodeLayout, range: std::ops::Range<usize>) -> V
     )
 }
 
+#[cfg(test)]
+mod step_tests;
 #[cfg(test)]
 mod tests;

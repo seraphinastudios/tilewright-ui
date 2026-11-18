@@ -58,11 +58,31 @@ renderer; it is not a production GPU path or performance qualification.
 A transparent reference target returns premultiplied RGB; use premultiplied
 composition (or composite onto an opaque background) when uploading it to SDL.
 
+The `prototype` feature is outside the compatibility promise: it serves the
+unpublished examples and C library, adds `tilewright-render-testkit` as a
+public dependency, and `render_rgba` returns a `tilewright-render-api` type.
+Any release, a patch release included, may change or remove it. Do not enable
+it in a production consumer.
+
+The crate root re-exports the renderer types needed to construct and drive
+`UiRenderer`/`UiCompiler` and to read a layout: `TextSystem`, `TextLimits`,
+`UiLimits`, `FontPack`, `FontBlob`, `UnicodeLayout`, `VisualMotion` and
+`unicode_fonts`. A host that composes its own scene or reads frame internals
+uses the renderer crates directly, at the same exact version: `SceneBundle`,
+`ResourceProvider`, `Quad`, `UiViewport`, and the error payloads `TextError`
+and `tilewright_scene::Error`. The renderer's own `TextCursor` and
+`TextAffinity` are not re-exported: this crate's API takes and returns
+`tilewright_ui::TextCursor`, while `UnicodeLayout`'s methods take the
+renderer's, from `tilewright-render-ui` directly.
+
 Logical viewport dimensions must be integral. Supply physical dimensions
 explicitly; all paint clipping and DPI transformation happen in the existing
 renderer. `TextGeometry` remains in logical coordinates and uses the exact
 immutable layout that produced the glyphs. Hosts pair it with the acknowledged
 application frame stamp before pointer selection, visual movement or IME use.
+`TextGeometry::step_caret` moves the editable text's caret one visual step and
+returns the new focus in committed text, stepping past the zero-width guard of
+a stored-break marker (see `docs/CONTRACT.md`, Single-line text).
 Composer text stays complete even when horizontally clipped/scrolled. Current
 renderer primitive text is unwrapped; history lines clip within their bounds.
 

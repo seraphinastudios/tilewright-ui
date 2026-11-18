@@ -338,6 +338,7 @@ fn ui_error(error: tilewright_ui::UiError) -> u32 {
         Stale => STALE,
         Exhausted => EXHAUSTED,
         // UiError is non_exhaustive; a new variant needs its own C status.
+        // `every_error_variant_has_its_own_c_status` fails until it has one.
         _ => INVALID_ARGUMENT,
     }
 }
@@ -348,6 +349,8 @@ fn app_error(error: tilewright_app::AppError) -> u32 {
         Stale => STALE,
         QueueFull => QUEUE_FULL,
         Exhausted => EXHAUSTED,
+        // AppError is non_exhaustive, as for `ui_error`.
+        _ => INVALID_ARGUMENT,
     }
 }
 fn disposition(value: tilewright_ui::Disposition) -> u32 {
@@ -1019,21 +1022,76 @@ pub unsafe extern "C" fn twui_scroll_at(
 mod tests {
     use super::*;
 
+    /// The variant names of `pub enum NAME` in a sibling crate's source, in
+    /// order: each line of the body that starts with an identifier.
+    fn enum_variants(source: &str, name: &str) -> Vec<String> {
+        let header = format!("pub enum {name} {{\n");
+        let start = source.find(&header).expect("enum definition") + header.len();
+        let body = &source[start..start + source[start..].find("\n}").expect("enum end")];
+        body.lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with(|c: char| c.is_ascii_uppercase()))
+            .map(|line| {
+                let end = line
+                    .find(|c: char| !c.is_ascii_alphanumeric())
+                    .unwrap_or(line.len());
+                line[..end].to_owned()
+            })
+            .collect()
+    }
+
     #[test]
-    fn every_ui_error_has_its_own_c_status() {
-        // `ui_error` needs a wildcard arm (UiError is non_exhaustive); this
-        // keeps that arm from hiding a missed mapping.
+    fn every_error_variant_has_its_own_c_status() {
+        // `UiError` and `AppError` are non_exhaustive, so `ui_error` and
+        // `app_error` need a wildcard arm. These lists name every variant,
+        // and are checked against the enums' source, so a new variant fails
+        // here until it is listed with its own status, never silently
+        // mapped to INVALID_ARGUMENT by the wildcard.
+        use tilewright_app::AppError;
+        use tilewright_ui::UiError;
+        let ui = [
+            UiError::InvalidInput,
+            UiError::LimitExceeded,
+            UiError::RefusedText,
+            UiError::QueueFull,
+            UiError::Stale,
+            UiError::Exhausted,
+        ];
+        let app = [
+            AppError::Ui(UiError::InvalidInput),
+            AppError::Stale,
+            AppError::QueueFull,
+            AppError::Exhausted,
+        ];
+        let name = |debug: String| debug[..debug.find('(').unwrap_or(debug.len())].to_owned();
+        assert_eq!(
+            ui.map(|error| name(format!("{error:?}"))).to_vec(),
+            enum_variants(include_str!("../../tilewright-ui/src/lib.rs"), "UiError")
+        );
+        assert_eq!(
+            app.map(|error| name(format!("{error:?}"))).to_vec(),
+            enum_variants(include_str!("../../tilewright-app/src/lib.rs"), "AppError")
+        );
         let mut seen = std::collections::BTreeSet::new();
-        for error in tilewright_ui::UiError::ALL {
+        for error in ui {
             let status = ui_error(error);
-            if error == tilewright_ui::UiError::InvalidInput {
+            if error == UiError::InvalidInput {
                 assert_eq!(status, INVALID_ARGUMENT);
             } else {
                 assert_ne!(status, INVALID_ARGUMENT, "{error:?}");
             }
             assert!(seen.insert(status), "{error:?} shares status {status}");
+            assert_eq!(app_error(AppError::Ui(error)), status, "{error:?}");
         }
-        assert_eq!(ui_error(tilewright_ui::UiError::RefusedText), REFUSED_TEXT);
+        assert_eq!(ui_error(UiError::RefusedText), REFUSED_TEXT);
+        // AppError's own variants mirror the UiError statuses of the same name.
+        for (error, same) in
+            app[1..]
+                .iter()
+                .zip([UiError::Stale, UiError::QueueFull, UiError::Exhausted])
+        {
+            assert_eq!(app_error(*error), ui_error(same), "{error:?}");
+        }
     }
 
     #[test]

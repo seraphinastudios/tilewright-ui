@@ -26,19 +26,6 @@ pub enum UiError {
     Stale,
     Exhausted,
 }
-impl UiError {
-    /// Every variant, so other crates can test their mappings completely.
-    /// The test below breaks when a variant is added; add it here too.
-    #[doc(hidden)]
-    pub const ALL: [UiError; 6] = [
-        UiError::InvalidInput,
-        UiError::LimitExceeded,
-        UiError::RefusedText,
-        UiError::QueueFull,
-        UiError::Stale,
-        UiError::Exhausted,
-    ];
-}
 impl std::fmt::Display for UiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
@@ -101,6 +88,7 @@ impl Default for Limits {
 }
 /// Immutable selection of the widgets owned by one context.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum Composition {
     #[default]
     Demo,
@@ -120,6 +108,7 @@ pub enum Action {
     },
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct ActionBatch {
     pub id: BatchId,
     pub actions: Vec<Action>,
@@ -130,6 +119,7 @@ pub enum Disposition {
     Unhandled,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct ControlSnapshot {
     pub epoch: ControlEpoch,
     pub world_input_allowed: bool,
@@ -138,6 +128,7 @@ pub struct ControlSnapshot {
     pub suspended: bool,
 }
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
 pub enum Key {
     Enter,
     Backspace,
@@ -159,12 +150,14 @@ pub struct KeyEvent {
     pub repeat: bool,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TextCommand {
     Backspace,
     Delete,
     SelectAll,
 }
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Input {
     Focus(Option<WidgetId>),
     CancelControls,
@@ -204,6 +197,7 @@ pub enum Input {
     Scroll(i32),
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct UiSnapshot {
     pub composition: Composition,
     pub revision: UiRevision,
@@ -792,12 +786,14 @@ pub enum Paint {
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct HitRegion {
     pub widget: WidgetRef,
     pub bounds: Rect,
     pub clip: Rect,
 }
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Layout {
     pub ui_revision: UiRevision,
     pub viewport: Viewport,
@@ -1177,28 +1173,6 @@ fn embedded_layout(
         hits,
         composer_bounds: snapshot.composer_visible.then_some(composer),
     })
-}
-
-#[cfg(test)]
-mod error_list_tests {
-    use super::UiError;
-
-    #[test]
-    fn every_error_variant_is_listed_once_in_order() {
-        // No wildcard: a new variant fails to compile here until it has a
-        // position, and then the assertions need it in `ALL`.
-        let position = |error: UiError| match error {
-            UiError::InvalidInput => 0,
-            UiError::LimitExceeded => 1,
-            UiError::RefusedText => 2,
-            UiError::QueueFull => 3,
-            UiError::Stale => 4,
-            UiError::Exhausted => 5,
-        };
-        for (index, error) in UiError::ALL.into_iter().enumerate() {
-            assert_eq!(position(error), index);
-        }
-    }
 }
 
 #[cfg(test)]

@@ -22,9 +22,8 @@ SPDX-License-Identifier: MIT). Adaptations: `ToolError` becomes
 `UiError::RefusedText`, `UiError::LimitExceeded` and `UiError::InvalidInput`
 (refused characters now have their own status, checked before the budget), the
 predicate is public as `refuses_single_line`, and the editor's English
-`stored_break_hint` is left to hosts. `TextInputSnapshot::step_visual` is new
-here. `tests/stored_breaks.rs` is adapted from the editor's
-`crates/tilewright-editor-ui/tests/stored_breaks.rs` and
+`stored_break_hint` is left to hosts. `tests/stored_breaks.rs` is adapted
+from the editor's `crates/tilewright-editor-ui/tests/stored_breaks.rs` and
 `crates/tilewright-editor-ui/tests/text_input.rs` at that commit (same
 organization, MIT): the class table, the round-trip and preedit-mapping
 checks and their coordinate tables come from there, rewritten for this
