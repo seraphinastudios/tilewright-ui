@@ -33,14 +33,16 @@ pub struct Namespace {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     InvalidNamespace,
     InvalidViewport,
     StaleSnapshot,
     IdentityCollision,
     LimitExceeded,
-    /// The lent text system issued this compiler's atlas ID a revision below
-    /// one it issued before: a different text system was lent.
+    /// The lent text system issued this compiler's atlas ID a revision lower
+    /// than one this compiler was issued before, or the same revision with
+    /// different bytes: a different text system was lent. Nothing changed.
     TextSystemChanged,
     Text(TextError),
     Scene(tilewright_scene::Error),
@@ -110,8 +112,8 @@ impl TextGeometry {
 /// unchanged atlas identity only when its previous compile was for the same
 /// atlas ID. When the host's own text and this compiler alternate on one
 /// system, every compile issues a new atlas revision for unchanged bytes, so a
-/// GPU backend re-uploads both atlases on every redraw. A renderer patch
-/// release removes this; adoption by a host that redraws often waits for it.
+/// GPU backend re-uploads both atlases on every redraw. A planned renderer
+/// patch release is to remove this; a host that redraws often waits for it.
 #[derive(Debug)]
 pub struct UiCompiler {
     namespace: Namespace,
@@ -176,8 +178,13 @@ impl UiCompiler {
     /// `system` may be one the host also uses for its own text; this call only
     /// borrows it, and its fonts and `TextLimits` apply. Lend the same system
     /// on every call: atlas revisions rise per system, so a second system could
-    /// reissue an old revision of this namespace's atlas ID. A lower revision
-    /// than one issued before is refused with [`Error::TextSystemChanged`].
+    /// reissue an old revision of this namespace's atlas ID. A revision lower
+    /// than one this compiler was issued before, or the same revision with
+    /// different bytes, is refused with [`Error::TextSystemChanged`]; a refused
+    /// compile changes nothing. So, given a reserved atlas ID, a compiler never
+    /// returns two different atlases under one (ID, revision). To switch text
+    /// systems on purpose, retire every frame carrying this atlas ID and create
+    /// a new `UiCompiler`.
     ///
     /// The namespace's atlas ID must be one the host can never compute for its
     /// own atlases. [`CompiledFrame::compose`] rejects a host scene that uses

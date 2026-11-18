@@ -36,11 +36,14 @@ let frame = compiler.compile(&mut host_text, &snapshot, &layout, physical_size)?
 ```
 
 Reserve its `atlas_resource` as an ID the host can never compute for its own
-atlases, and lend the same `TextSystem` on every call; a lower atlas revision
-from another system is refused. With `tilewright-render-ui` 0.7.1, alternating
+atlases, and lend the same `TextSystem` on every call. A revision lower than one
+the compiler was issued before, or the same revision with different bytes, is
+refused and changes nothing, so a compiler never returns two different atlases
+under one (ID, revision). To switch systems, retire every frame carrying the
+compiler's atlas ID and create a new `UiCompiler`. With `tilewright-render-ui` 0.7.1, alternating
 host and shared compiles on one system issue a new atlas revision each time, so
-a GPU backend re-uploads both atlases per redraw. A renderer patch release
-removes this known limitation; see `docs/CONTRACT.md` in the repository.
+a GPU backend re-uploads both atlases per redraw. A planned renderer patch
+release is to remove this known limitation; see `docs/CONTRACT.md` in the repository.
 
 Fonts are supplied as explicit bytes and SHA-256 digests. Reserve the two resource IDs for the engine's entire lifetime; retain
 each `CompiledFrame` while a frame is prepared, in flight or displayed.

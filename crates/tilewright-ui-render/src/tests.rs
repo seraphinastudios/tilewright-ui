@@ -487,28 +487,45 @@ fn alternating_host_and_field_compiles_stay_consistent() {
 }
 
 /// Lending a different text system later could reissue an old revision of
-/// the field's atlas ID; a lower revision than one issued is refused.
+/// the field's atlas ID. A lower revision, or an equal one with different
+/// bytes, is refused every time and changes nothing. A content change raises
+/// the revision under any atlas reuse policy, so this holds after the pin moves.
 #[test]
 #[cfg(feature = "prototype")]
-fn a_compiler_refuses_a_lower_atlas_revision_from_another_system() {
-    let (snapshot, layout) = composer("Field text");
+fn a_compiler_refuses_another_systems_atlas_revisions() {
+    let (a_snapshot, a_layout) = composer("Field text");
+    let (b_snapshot, b_layout) = composer("Other words");
     let mut first = TextSystem::new(fonts(), TextLimits::default()).unwrap();
     let mut compiler = UiCompiler::new(NAMESPACE, UiLimits::default()).unwrap();
     compiler
-        .compile(&mut first, &snapshot, &layout, [640, 400])
+        .compile(&mut first, &a_snapshot, &a_layout, [640, 400])
+        .unwrap();
+    compiler
+        .compile(&mut first, &b_snapshot, &b_layout, [640, 400])
         .unwrap();
     host_label(&mut first);
-    compiler
-        .compile(&mut first, &snapshot, &layout, [640, 400])
-        .unwrap();
     let mut second = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    for _ in 0..2 {
+        assert!(matches!(
+            compiler.compile(&mut second, &a_snapshot, &a_layout, [640, 400]),
+            Err(Error::TextSystemChanged)
+        ));
+    }
+    compiler
+        .compile(&mut first, &a_snapshot, &a_layout, [640, 400])
+        .unwrap();
+
+    // Equal revision, different bytes.
+    let mut other = UiCompiler::new(NAMESPACE, UiLimits::default()).unwrap();
+    let mut one = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    let mut two = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    other
+        .compile(&mut one, &a_snapshot, &a_layout, [640, 400])
+        .unwrap();
     assert!(matches!(
-        compiler.compile(&mut second, &snapshot, &layout, [640, 400]),
+        other.compile(&mut two, &b_snapshot, &b_layout, [640, 400]),
         Err(Error::TextSystemChanged)
     ));
-    compiler
-        .compile(&mut first, &snapshot, &layout, [640, 400])
-        .unwrap();
 }
 
 /// The compiler uses only the fonts of the lent system: with a Latin-only
