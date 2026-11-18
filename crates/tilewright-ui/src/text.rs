@@ -132,49 +132,6 @@ impl TextInputSnapshot {
     }
 }
 
-impl TextInputSnapshot {
-    /// One visual caret step, for hosts that move the caret with a renderer
-    /// layout of `display_text`. `step` moves a display cursor one position
-    /// (left, right, home or end). It starts from `display_selection.focus`
-    /// and the result maps back to committed text.
-    ///
-    /// A marker with a zero-width guard has two display positions for one
-    /// committed position. A step that moves the display byte but not the
-    /// committed byte only crossed a guard, so it is repeated, at most twice
-    /// more; without that the caret could stall there for good. A move of
-    /// the affinity alone is a real visual stop (a direction boundary) and
-    /// is returned at once. In mixed-direction text a guard can still make
-    /// the caret alternate between two positions, as before. Fails with
-    /// `InvalidInput` during composition.
-    // Provisional: its home and signature may change before release (it may
-    // move to the render crate, where caret geometry is available).
-    #[doc(hidden)]
-    pub fn step_visual(
-        &self,
-        mut step: impl FnMut(TextCursor) -> TextCursor,
-    ) -> Result<TextCursor, UiError> {
-        if self.composition.is_some() {
-            return Err(UiError::InvalidInput);
-        }
-        let start = self.selection.focus;
-        let mut display = self.display_selection.focus;
-        let mut result = start;
-        for _ in 0..3 {
-            let next = step(display);
-            if next == display {
-                break;
-            }
-            let moved = next.byte != display.byte;
-            display = next;
-            result = self.committed_cursor(display)?;
-            if result.byte != start.byte || !moved {
-                break;
-            }
-        }
-        Ok(result)
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Composition {
     text: String,

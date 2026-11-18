@@ -9,6 +9,7 @@ use tilewright_ui::{
 };
 pub use tilewright_ui::{Composition, HitRegion, Paint, Rect, Viewport};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum AppError {
     Ui(UiError),
     Stale,

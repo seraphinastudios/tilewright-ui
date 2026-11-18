@@ -58,11 +58,30 @@ renderer; it is not a production GPU path or performance qualification.
 A transparent reference target returns premultiplied RGB; use premultiplied
 composition (or composite onto an opaque background) when uploading it to SDL.
 
+The `prototype` feature is outside the compatibility promise: it serves the
+unpublished examples and C library, adds `tilewright-render-testkit` as a
+public dependency, and `render_rgba` returns a `tilewright-render-api` type.
+Any release, a patch release included, may change or remove it. Do not enable
+it in a production consumer.
+
+The crate root re-exports the renderer types its constructors, methods and
+fields take or return (`TextSystem`, `TextLimits`, `UiLimits`, `FontPack`,
+`FontBlob`, `UnicodeLayout`, `VisualMotion` and `unicode_fonts`), so a host
+that only compiles and presents frames needs no direct renderer dependency.
+The renderer's own `TextCursor` and `TextAffinity` are not re-exported: this
+crate's API takes and returns `tilewright_ui::TextCursor`. A host that goes
+further (composing with its own `SceneBundle`, calling `UnicodeLayout`'s
+methods directly, or matching `Error::Text`) depends on the renderer crates
+itself, at the same exact version.
+
 Logical viewport dimensions must be integral. Supply physical dimensions
 explicitly; all paint clipping and DPI transformation happen in the existing
 renderer. `TextGeometry` remains in logical coordinates and uses the exact
 immutable layout that produced the glyphs. Hosts pair it with the acknowledged
 application frame stamp before pointer selection, visual movement or IME use.
+`TextGeometry::step_caret` moves the editable text's caret one visual step and
+returns the new focus in committed text, stepping past the zero-width guard of
+a stored-break marker (see `docs/CONTRACT.md`, Single-line text).
 Composer text stays complete even when horizontally clipped/scrolled. Current
 renderer primitive text is unwrapped; history lines clip within their bounds.
 

@@ -341,11 +341,9 @@ pub unsafe extern "C" fn twui_move_visual(
             if snapshot.composition.is_some() {
                 return Err(STALE);
             }
-            // The layout holds the marked display text; step past guards
-            // and map back to committed.
-            let cursor = snapshot
-                .step_visual(|cursor| text.move_visual(cursor, motion))
-                .map_err(ui_error)?;
+            // The layout holds the marked display text; step_caret steps
+            // past guards and maps back to committed.
+            let cursor = text.step_caret(motion).map_err(ui_error)?;
             let selection = tilewright_ui::TextSelection {
                 anchor: if extend == 1 {
                     snapshot.selection.anchor
@@ -811,7 +809,7 @@ mod tests {
                 );
                 assert_eq!(focus, expected);
             }
-            // Guarded markers: the old single step against step_visual.
+            // Guarded markers: the old single step against step_caret.
             // Values with RTL text trapped the caret at a guard for good.
             for (index, (value, start, motion)) in [
                 ("\u{5d0}\n\u{301}\u{5d1}", 0, 1),

@@ -35,6 +35,9 @@ Pin the ref: any writer can run a modified `release.yml` on another branch.
   API, or a move to the renderer's next minor version, takes the next minor
   version; anything else the next patch. CI's "Crate version stays or moves
   one step" check refuses any other move, and anything at 1.0.0 or above.
+  `tilewright-ui-render`'s `prototype` feature is outside this promise: it
+  serves the unpublished examples and C library, and any release may change
+  or remove it.
 - **Ownership.** The first release at a crate version owns it, for good: its
   `.crate` assets are what crates.io receives. Later releases at the same
   crate version carry archives with other bytes (the revision is inside each)
