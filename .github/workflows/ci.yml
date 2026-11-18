@@ -17,7 +17,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The crate version check reads the base commit.
+          fetch-depth: 0
           persist-credentials: false
+      - name: Crate version stays or moves one step
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z ${BASE} || ${BASE} =~ ^0+$ ]] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "::notice::no base commit to compare the crate version with"
+          else
+            python3 tools/release/release.py check-version --base "${BASE}"
+          fi
       - name: Install pinned Rust and Ubuntu SDL build dependencies
         run: bash tools/install-ci-dependencies.sh
       - name: Prepare exact licensed font pack outside source
@@ -27,6 +38,12 @@ jobs:
           printf 'TILEWRIGHT_UI_FONT_ROOT=%s\n' "$font_root" >> "$GITHUB_ENV"
       - name: Check source, tests and strict Clippy
         run: bash tools/check.sh
+      # What a release packages and crates.io receives, with Cargo's own
+      # verification build of each packaged crate.
+      - name: Package the three published crates
+        run: |
+          cargo package --locked -p tilewright-ui -p tilewright-app -p tilewright-ui-render
+          python3 tools/release/release.py check-crates --dir target/package
       - name: C17 ABI link and lifecycle tests
         run: bash tools/check-c.sh cpu-prototype
       - name: C17 SDL sample and dummy-driver input regressions

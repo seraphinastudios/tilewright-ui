@@ -1,0 +1,140 @@
+name: Publish crates
+
+# Publishes the three crates, at the crate version a release owns, to
+# crates.io from that release's tagged commit. docs/RELEASING.md describes
+# it; docs/CRATE-FIRST-PUBLICATION.md is the owner's one-time checklist.
+#
+# Dispatched on main only: by the Release workflow once every crate name
+# exists, or by the owner. It always runs main's code.
+#
+# - credential trusted-publishing (the steady state): the job's OIDC token is
+#   exchanged for a 30-minute crates.io token. No token is stored anywhere.
+#   Stops with nothing uploaded while a crate name does not exist yet.
+# - credential first-publication-token (once, by the owner): uses the
+#   short-lived publish-new token the owner stored as the environment secret
+#   CRATES_IO_FIRST_PUBLICATION_TOKEN, only for crate names crates.io lacks.
+#   The owner deletes the secret and revokes the token afterwards.
+#
+# Both verify first, without credentials: the release is immutable, its
+# .crate assets match SHA256SUMS, GitHub's digests and build provenance from
+# release.yml on main at the tagged commit, and packaging that commit again
+# gives the same bytes. Each upload is `cargo publish --no-verify`, which
+# packages those same bytes and builds nothing; afterwards crates.io's
+# index must list the attested checksums.
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: verify only checks; publish also uploads
+        type: choice
+        options: [verify, publish]
+        default: verify
+        required: true
+      credential:
+        description: trusted-publishing, or first-publication-token once for new crate names
+        type: choice
+        options: [trusted-publishing, first-publication-token]
+        default: trusted-publishing
+        required: true
+      release_tag:
+        description: The release that owns the crate version, vX.Y.Z
+        type: string
+        required: true
+
+permissions: {}
+
+# One run per release at a time; a running run is never cancelled.
+concurrency:
+  group: ui-crate-publication-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  OPERATION: ${{ inputs.operation }}
+  CREDENTIAL: ${{ inputs.credential }}
+  RELEASE_TAG: ${{ inputs.release_tag }}
+
+jobs:
+  verify:
+    name: Verify the release's crate archives
+    if: github.repository == 'seraphinastudios/tilewright-ui' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read
+    outputs:
+      pending: ${{ steps.verify.outputs.pending }}
+    steps:
+      - name: Check out main with tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the release
+        run: bash tools/release/checkout-release.sh
+
+      - name: Verify and plan the upload
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 tools/release/publish.py verify --tag "${RELEASE_TAG}" --tree "${RUNNER_TEMP}/release" \
+            --work "${RUNNER_TEMP}/work" --mode "${CREDENTIAL}" --operation "${OPERATION}" --plan "${RUNNER_TEMP}/plan.json"
+
+  publish:
+    name: Publish to crates.io
+    needs: verify
+    if: github.repository == 'seraphinastudios/tilewright-ui' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'publish' && needs.verify.outputs.pending != ''
+    # Admits only main. crates.io's trusted publishers name this workflow
+    # file and this environment, so renaming either stops publication.
+    environment: crates-io-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      attestations: read
+      id-token: write
+    steps:
+      - name: Check out main with tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the release
+        run: bash tools/release/checkout-release.sh
+
+      # Again on this runner: the upload repackages here.
+      - name: Verify and plan the upload
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 tools/release/publish.py verify --tag "${RELEASE_TAG}" --tree "${RUNNER_TEMP}/release" \
+            --work "${RUNNER_TEMP}/work" --mode "${CREDENTIAL}" --operation "${OPERATION}" --plan "${RUNNER_TEMP}/plan.json"
+
+      - name: Exchange the job's OIDC token for a crates.io token
+        id: auth
+        if: inputs.credential == 'trusted-publishing' && steps.verify.outputs.pending != ''
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+
+      - name: Upload with trusted publishing
+        if: inputs.credential == 'trusted-publishing' && steps.verify.outputs.pending != ''
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          PENDING: ${{ steps.verify.outputs.pending }}
+        run: bash "${GITHUB_WORKSPACE}/tools/release/upload.sh"
+
+      - name: Upload with the first-publication token
+        if: inputs.credential == 'first-publication-token' && steps.verify.outputs.pending != ''
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_FIRST_PUBLICATION_TOKEN }}
+          PENDING: ${{ steps.verify.outputs.pending }}
+        run: bash "${GITHUB_WORKSPACE}/tools/release/upload.sh"
+
+      - name: Confirm the attested bytes on crates.io
+        if: steps.verify.outputs.pending != ''
+        run: python3 tools/release/publish.py confirm --plan "${RUNNER_TEMP}/plan.json"
