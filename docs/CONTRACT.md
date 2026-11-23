@@ -178,6 +178,36 @@ still submit. `layout_in` and every existing caller keep the control; `Demo`
 refuses the option with `InvalidInput`. The C facade and the web adapter always
 lay out the control.
 
+`LayoutOptions::field_style` (since 0.1.2) sizes and colours the single field.
+Its default reproduces earlier versions exactly; each field and its default:
+
+| `FieldStyle` field | Default | Effect |
+| --- | --- | --- |
+| `text_size` | `20.0` | Composer text size in logical px, for shaping, measurement, hit-testing, the caret, the IME area and `step_caret` |
+| `height` | `36.0` | Composer box height, at most the attachment height less twice the inset; the box sits at the bottom |
+| `inset` | `8.0` | Space between the attachment's edges and the box (and the submit control), at most half the attachment's width and height |
+| `padding_left`, `padding_top` | `0.0` | Offset of the text origin from the box's top-left corner |
+| `padding_right` | `0.0` | When the text scrolls to keep the caret visible, the caret's right edge stays this far from the box's right edge |
+| `text_color` | `[1.0; 4]` | Composer text |
+| `box_color` | `Some([0.18, 0.2, 0.25, 1.0])` | Box fill; `None` paints no box, for a host that draws the background |
+| `selection_color` | `[0.23, 0.40, 0.62, 1.0]` | Selection highlight, under the text |
+| `caret_color`, `preedit_color` | `None` | Caret and preedit underline, over the text; `None` uses `text_color` |
+
+The layout uses the geometry and the text and box colours, and keeps the
+validated style in the `Layout` (`Layout::field_style`, read-only).
+`UiCompiler::compile` reads the text size, padding and remaining colours from
+there, so a frame is always drawn with the style its layout was made with.
+Text, selection, caret and underline stay clipped to the box (intersected with
+the clip), padding included. `layout_in_with` refuses with `InvalidInput`, and
+lays nothing out, when a length is not finite, is negative or exceeds 8192, when
+`height` is zero, when `text_size` is outside 1–256, or when a colour channel is
+not finite or outside 0–1. Only `SingleField` takes a style other than the
+default: `ChatPanel` and `Demo` refuse one with `InvalidInput`, since their
+composer shares its panel with history and fixed rows. The Apply control's
+width (80), its gap (8), colours and label, the history rows and the 18 px body
+and button text are fixed. The C facade, the web adapter and `App` use the
+default style.
+
 Reading one value of the live state does not need a snapshot: `Ui::composer_text`
 (borrowed committed text), `Ui::composer_revision`, `Ui::composer_selection` and
 `Ui::is_composing` (since 0.1.1) equal the corresponding `snapshot().composer`
@@ -187,7 +217,13 @@ state, not displayed geometry.
 A host that composes the shared frame into its own scene under its own limits
 reads `CompiledFrame::quad_count` to budget for the shared quads and composes
 with `CompiledFrame::compose_with_limits` (since 0.1.1); `compose` uses
-`SceneLimits::default()`.
+`SceneLimits::default()`. `CompiledFrame::raster_sample_count` (since 0.1.2)
+gives the frame's raster samples as `SceneLimits::maximum_raster_samples`
+counts them (each quad's bounding box, or its two triangles' boxes when it is
+not an axis-aligned rectangle, clipped to the frame's physical viewport in
+whole pixels, times the glow factor, summed with saturation):
+`compose_with_limits` accepts the frame over a world exactly when the world's
+samples plus this count are within the limit, and the other limits hold.
 
 Call `set_layout` with the host viewport, panel bounds and clip before preparing
 an embedded frame. A changed supplied attachment invalidates old displayed

@@ -55,8 +55,11 @@ Namespaces are checked again when composing an existing world scene.
 
 `CompiledFrame::compose` returns an ordinary scene and resource provider for the
 existing renderer, checked against `SceneLimits::default()`. A host with
-limits of its own reads `CompiledFrame::quad_count` to budget for the shared
-quads and calls `CompiledFrame::compose_with_limits` with its `SceneLimits`. `standalone` creates an overlay. The optional `prototype`
+limits of its own reads `CompiledFrame::quad_count` and
+`CompiledFrame::raster_sample_count` (since 0.1.2; counted as
+`SceneLimits::maximum_raster_samples` counts them) to budget for the shared
+quads and samples, and calls `CompiledFrame::compose_with_limits` with its
+`SceneLimits`. `standalone` creates an overlay. The optional `prototype`
 feature enables `Presentation::render_rgba`, using the existing CPU reference
 renderer; it is not a production GPU path or performance qualification.
 A transparent reference target returns premultiplied RGB; use premultiplied
@@ -89,7 +92,10 @@ returns the new focus in committed text, stepping past the zero-width guard of
 a stored-break marker, and past a change of affinity alone that leaves the
 caret drawn within 1/64 logical pixel of where it was (two stops a rounding
 error apart are one place; see `docs/CONTRACT.md`, Single-line text).
-Composer text stays complete even when horizontally clipped/scrolled. Current
+The composer's text is shaped and drawn with the layout's
+`tilewright_ui::FieldStyle` (`Layout::field_style`): its text size, padding,
+and selection, caret and underline colours; the default is 20 px with no
+padding, as before. Composer text stays complete even when horizontally clipped/scrolled. Current
 renderer primitive text is unwrapped; history lines clip within their bounds.
 
 Unit tests require no ambient fonts. The explicit external-font integration

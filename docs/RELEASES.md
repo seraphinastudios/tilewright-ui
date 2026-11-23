@@ -14,9 +14,9 @@ through a committed registry-only `Cargo.lock`.
 
 | Package | Direct shared-library dependencies | crates.io |
 | --- | --- | --- |
-| `tilewright-ui` | Unicode segmentation | Published, `0.1.0`; `0.1.1` with the release that owns it |
-| `tilewright-app` | `tilewright-ui` | Published, `0.1.0`; `0.1.1` with the release that owns it |
-| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.7.2` APIs | Published, `0.1.0`; `0.1.1` with the release that owns it |
+| `tilewright-ui` | Unicode segmentation | Published, `0.1.0` and `0.1.1`; `0.1.2` with the release that owns it |
+| `tilewright-app` | `tilewright-ui` | Published, `0.1.0` and `0.1.1`; `0.1.2` with the release that owns it |
+| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.7.2` APIs | Published, `0.1.0` and `0.1.1`; `0.1.2` with the release that owns it |
 | `tilewright-ui-ffi` | `tilewright-ui`, `tilewright-app`; optional UI renderer | Not published; the C library and header are a separate track |
 
 The native demo (`tilewright-ui-native-demo`) and the browser adapter
@@ -42,8 +42,33 @@ Windows.
 What each crate version changes for a host, newest first. Every entry keeps
 the renderer at `0.7.2` and the C ABI and header as they were. Source release
 tags (`vX.Y.Z`) and crate versions are numbered separately; each release's
-notes say which crate version it owns (crate 0.1.1 is owned by the first
+notes say which crate version it owns (crate 0.1.2 is owned by the first
 release cut after it merges).
+
+### 0.1.2
+
+A patch release: nothing is removed or changed in meaning, so a host on 0.1.1
+can move to `=0.1.2` (all three crates together) without code changes, and
+with default options every layout, frame and render is the same as with
+0.1.1.
+
+- **A styled single field** (`tilewright-ui`, `tilewright-ui-render`).
+  `LayoutOptions::field_style` takes a `FieldStyle`: the composer's text size,
+  the box's height and inset, the text's left and top padding and a right
+  margin for the scrolled caret, and the colours of the text, the box (or no
+  box), the selection, the caret and the preedit underline. A host can lay
+  the field out to match its own rows, for example an 18 px field in a flat
+  30 px row on its own background. The layout keeps the style
+  (`Layout::field_style`) and the compiler shapes, hit-tests and draws the
+  text with it, so caret steps, clicks and the IME area follow the chosen
+  size. Only `SingleField` takes a non-default style; nonsensical values are
+  refused with `InvalidInput`. See `docs/CONTRACT.md`, Embedded panels.
+- **A raster-sample count** (`tilewright-ui-render`).
+  `CompiledFrame::raster_sample_count` gives the samples a frame adds to a
+  composed scene, counted as `SceneLimits::maximum_raster_samples` counts
+  them, so a host can reserve samples before composing as it reserves
+  `quad_count` quads.
+- `tilewright-app` changes only its version.
 
 ### 0.1.1
 
