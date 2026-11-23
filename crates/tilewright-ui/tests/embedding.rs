@@ -192,3 +192,131 @@ fn embedded_layouts_are_bounded_and_have_no_world_or_host_modal_output() {
         assert!(modal.hits.is_empty());
     }
 }
+
+#[test]
+#[allow(clippy::float_cmp)] // Layout geometry is exact arithmetic on whole pixels.
+fn an_embedded_layout_without_its_submit_control_keeps_everything_else() {
+    let viewport = Viewport::new(800.0, 600.0, 1.0).unwrap();
+    let bounds = Rect {
+        x: 100.0,
+        y: 200.0,
+        width: 300.0,
+        height: 52.0,
+    };
+    let bare = {
+        let mut options = LayoutOptions::default();
+        options.submit_control = false;
+        options
+    };
+    assert!(LayoutOptions::default().submit_control);
+    for composition in [Composition::ChatPanel, Composition::SingleField] {
+        let mut ui = Ui::with_composition(Limits::default(), composition).unwrap();
+        if composition == Composition::SingleField {
+            ui.bind_field("draft").unwrap();
+        }
+        ui.apply(Input::Focus(Some(COMPOSER))).unwrap();
+        let snapshot = ui.snapshot();
+        let full = layout_in(&snapshot, viewport, bounds, bounds).unwrap();
+        assert_eq!(
+            layout_in_with(
+                &snapshot,
+                viewport,
+                bounds,
+                bounds,
+                &LayoutOptions::default()
+            )
+            .unwrap(),
+            full
+        );
+        let layout = layout_in_with(&snapshot, viewport, bounds, bounds, &bare).unwrap();
+        let submit_paint = |layout: &Layout| {
+            layout
+                .paint
+                .iter()
+                .filter(|paint| matches!(paint, Paint::Text { widget, .. } if widget.id == SUBMIT))
+                .count()
+        };
+        assert_eq!(submit_paint(&full), 1);
+        assert_eq!(submit_paint(&layout), 0);
+        assert_eq!(layout.paint.len(), full.paint.len() - 2);
+        assert!(!layout.hits.iter().any(|hit| hit.widget.id == SUBMIT));
+        // The composer takes the whole inner width: the 8 px insets remain.
+        let composer = layout.composer_bounds.unwrap();
+        assert_eq!(composer.x, full.composer_bounds.unwrap().x);
+        assert_eq!(composer.width, bounds.width - 16.0);
+        assert_eq!(composer.y, full.composer_bounds.unwrap().y);
+        assert!(
+            layout
+                .hits
+                .iter()
+                .any(|hit| hit.widget.id == COMPOSER && hit.bounds == composer)
+        );
+        // Without the control, a host's own control still submits.
+        if composition == Composition::ChatPanel {
+            ui.apply(Input::TextCommit {
+                target: ui.text_target().unwrap(),
+                text: "hi".into(),
+            })
+            .unwrap();
+        }
+        ui.apply(Input::Activate(SUBMIT)).unwrap();
+        assert_eq!(ui.peek_actions().unwrap().actions.len(), 1);
+    }
+    let demo = Ui::new(Limits::default()).unwrap();
+    assert_eq!(
+        layout_in_with(&demo.snapshot(), viewport, bounds, bounds, &bare),
+        Err(UiError::InvalidInput)
+    );
+}
+
+#[test]
+fn composer_accessors_read_the_current_state_without_a_snapshot() {
+    let mut ui = field();
+    ui.bind_field("a\nb").unwrap();
+    ui.apply(Input::Focus(Some(COMPOSER))).unwrap();
+    let check = |ui: &Ui| {
+        let snapshot = ui.snapshot();
+        assert_eq!(ui.composer_text(), snapshot.composer.committed);
+        assert_eq!(ui.composer_revision(), snapshot.composer.revision);
+        assert_eq!(ui.composer_selection(), snapshot.composer.selection);
+        assert_eq!(ui.is_composing(), snapshot.composer.composition.is_some());
+    };
+    check(&ui);
+    assert_eq!(ui.composer_text(), "a\nb");
+    // A selection whose anchor and focus differ.
+    let selection = TextSelection {
+        anchor: TextCursor::new(3),
+        focus: TextCursor::new(1),
+    };
+    ui.apply(Input::Selection {
+        target: ui.text_target().unwrap(),
+        selection,
+    })
+    .unwrap();
+    check(&ui);
+    assert_eq!(ui.composer_selection(), selection);
+    let target = ui.text_target().unwrap();
+    ui.apply(Input::Preedit {
+        target,
+        text: "候補".into(),
+        start: 0,
+        length: 1,
+    })
+    .unwrap();
+    check(&ui);
+    assert!(ui.is_composing());
+    assert_eq!(ui.composer_text(), "a\nb");
+    ui.apply(Input::TextCommit {
+        target: ui.text_target().unwrap(),
+        text: "c".into(),
+    })
+    .unwrap();
+    check(&ui);
+    assert!(!ui.is_composing());
+    // The commit replaced the selected stored break.
+    assert_eq!(ui.composer_text(), "ac");
+    // The revision is readable unfocused, where `text_target` is `None`.
+    ui.apply(Input::Focus(None)).unwrap();
+    assert!(ui.text_target().is_none());
+    check(&ui);
+}

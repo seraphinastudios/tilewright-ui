@@ -1,20 +1,22 @@
 # Package and release plan
 
-Nothing from this workspace is on crates.io yet. The owner approved
-publishing three crates on 2026-11-17; they set `publish = ["crates-io"]`, and
-every other package `publish = false`. Releases and publication run as
-[RELEASING.md](RELEASING.md) describes, once the owner has done the one-time
-steps in [CRATE-FIRST-PUBLICATION.md](CRATE-FIRST-PUBLICATION.md); until
-then, declaring version `0.1.0` does not reserve a registry name. The renderer crates
-are pinned at exactly `0.7.2` through a committed registry-only `Cargo.lock`.
+Three crates are on crates.io: `tilewright-ui`, `tilewright-app` and
+`tilewright-ui-render`, first published at `0.1.0` on 2026-11-23 (UTC) under the
+owner's approval of 2026-11-17. They set `publish = ["crates-io"]`, and every
+other package `publish = false`. Releases and publication run as
+[RELEASING.md](RELEASING.md) describes; the owner's one-time first-publication
+steps are in [CRATE-FIRST-PUBLICATION.md](CRATE-FIRST-PUBLICATION.md). From
+0.1.1 on, a new crate version reaches crates.io through trusted publishing
+alone, with no stored token. The renderer crates are pinned at exactly `0.7.2`
+through a committed registry-only `Cargo.lock`.
 
-## What will be published
+## What is published
 
 | Package | Direct shared-library dependencies | crates.io |
 | --- | --- | --- |
-| `tilewright-ui` | Unicode segmentation | Planned, first version `0.1.0` |
-| `tilewright-app` | `tilewright-ui` | Planned, first version `0.1.0` |
-| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.7.2` APIs | Planned, first version `0.1.0` |
+| `tilewright-ui` | Unicode segmentation | Published, `0.1.0`; `0.1.1` with the release that owns it |
+| `tilewright-app` | `tilewright-ui` | Published, `0.1.0`; `0.1.1` with the release that owns it |
+| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.7.2` APIs | Published, `0.1.0`; `0.1.1` with the release that owns it |
 | `tilewright-ui-ffi` | `tilewright-ui`, `tilewright-app`; optional UI renderer | Not published; the C library and header are a separate track |
 
 The native demo (`tilewright-ui-native-demo`) and the browser adapter
@@ -26,14 +28,59 @@ next minor version, takes the next minor version; anything else takes the next
 patch version. They are published in dependency order: `tilewright-ui`, then
 `tilewright-app` and `tilewright-ui-render`.
 
-Publishing follows the model of `tilewright-world`. The owner publishes the
+Publishing follows the model of `tilewright-world`. The owner published the
 first version of each new crate name herself, from a browser, with a
 short-lived token used once by the publish workflow
-([CRATE-FIRST-PUBLICATION.md](CRATE-FIRST-PUBLICATION.md)), then adds a
+([CRATE-FIRST-PUBLICATION.md](CRATE-FIRST-PUBLICATION.md)), then added a
 trusted publisher for each crate; after that, releases publish through trusted
 publishing only, with no stored token. CI packages the three crates with
 Cargo's verification build on every pull request and tests them on Linux and
 Windows.
+
+## Crate versions
+
+What each crate version changes for a host, newest first. Every entry keeps
+the renderer at `0.7.2` and the C ABI and header as they were. Source release
+tags (`vX.Y.Z`) and crate versions are numbered separately; each release's
+notes say which crate version it owns (crate 0.1.1 is owned by the first
+release cut after it merges).
+
+### 0.1.1
+
+A patch release: nothing is removed or changed in meaning, so a host on 0.1.0
+can move to `=0.1.1` (all three crates together) without code changes.
+
+- **Caret steps no longer stall at rounding-equal stops**
+  (`tilewright-ui-render`). The renderer's layout can give one position two
+  caret stops whose x differ only by floating-point rounding (97.700005 and
+  97.7). `TextGeometry::step_caret` took the step between them, a change of
+  affinity alone, as a direction-boundary stop, so an arrow press did nothing:
+  next to a stored-break marker at 20 px (`Trail⏎mar⏎ker¶`, Left from End
+  visited 9 twice) and in plain right-to-left text (`אבג`, 2, 4, 4, 6). A step
+  that changes only the affinity is now a stop only when the caret is drawn
+  more than 1/64 logical pixel away on either axis; otherwise it steps on.
+  Genuine direction-boundary stops, which lie a glyph advance apart, are kept.
+  Hosts that call `step_caret` (and the C `twui_move_visual`) get this with
+  no change.
+- **Scene limits for hosts** (`tilewright-ui-render`).
+  `CompiledFrame::quad_count` gives the number of quads a frame adds to a
+  composed scene, and `CompiledFrame::compose_with_limits` composes under the
+  host's `SceneLimits` instead of the defaults. `compose` is unchanged.
+- **Reads without a snapshot** (`tilewright-ui`). `Ui::composer_text`
+  (borrowed committed text), `Ui::composer_revision`, `Ui::composer_selection`
+  and `Ui::is_composing` read the current composer state without cloning a
+  `UiSnapshot`.
+- **A single field without its Apply control** (`tilewright-ui`).
+  `layout_in_with` takes `LayoutOptions`; with `submit_control = false` an
+  embedded panel lays out the composer across the whole inner width with no
+  submit paint or hit region, for a host that draws its own control and sends
+  `Input::Activate(SUBMIT)`. `layout_in` is `layout_in_with` with the
+  defaults and lays out the control as before.
+- `tilewright-app` changes only its version.
+
+### 0.1.0
+
+The first publication.
 
 ## Renderer dependency provenance
 

@@ -16,12 +16,12 @@ license = "MIT"
 license-file = "LICENSE"
 repository = "https://github.com/seraphinastudios/tilewright-ui"
 rust-version = "1.97.1"
-version = "0.1.0"
+version = "0.1.1"
 
 [workspace.dependencies]
-tilewright-ui = { path = "crates/tilewright-ui", version = "=0.1.0" }
-tilewright-app = { path = "crates/tilewright-app", version = "=0.1.0" }
-tilewright-ui-render = { path = "crates/tilewright-ui-render", version = "=0.1.0" }
+tilewright-ui = { path = "crates/tilewright-ui", version = "=0.1.1" }
+tilewright-app = { path = "crates/tilewright-app", version = "=0.1.1" }
+tilewright-ui-render = { path = "crates/tilewright-ui-render", version = "=0.1.1" }
 unicode-segmentation = "=1.13.3"
 tilewright-scene = "=0.7.2"
 tilewright-render-ui = "=0.7.2"
