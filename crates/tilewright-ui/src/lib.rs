@@ -1097,6 +1097,12 @@ impl Default for LayoutOptions {
 /// governs shaping, measurement, hit-testing, the caret, the input method
 /// area and caret steps of a given layout.
 ///
+/// Colours are RGBA with each channel in 0–1 and straight (not
+/// premultiplied) alpha, like every [`Paint`] colour. They are not converted
+/// between colour spaces: the Tilewright renderer blends them as given
+/// (source over, by alpha) and writes them unchanged to its non-sRGB target,
+/// so they are the display's own encoded values, normally sRGB.
+///
 /// [`layout_in_with`] refuses a style with `UiError::InvalidInput` when a
 /// length is not finite, is negative, or is over 8192 (the largest logical
 /// viewport the renderer accepts), when `height` is zero, when `text_size`
@@ -1148,7 +1154,9 @@ pub struct FieldStyle {
     ///
     /// Text, selection, caret and underline are clipped to the box, not to
     /// the padding: scrolled text shows in the padding as in the rest of
-    /// the box.
+    /// the box. When `padding_left` and `padding_right` leave less room than
+    /// the caret's width, this right margin wins: the text is scrolled so
+    /// the caret keeps it, and starts left of `padding_left`.
     pub padding_right: f32,
     /// The composer's text. Default white, `[1.0; 4]`.
     pub text_color: [f32; 4],

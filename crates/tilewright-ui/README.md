@@ -40,7 +40,8 @@ keeps the style (`Layout::field_style`), and `tilewright-ui-render` shapes,
 measures, hit-tests and draws the field's text with it, so a layout and its
 frame always agree. Only `SingleField` takes a style other than the default;
 nonsensical values are refused with `InvalidInput`. `FieldStyle` is
-`#[non_exhaustive]` too (its doc test runs this):
+`#[non_exhaustive]` too (the `FieldStyle` doc test runs an equivalent
+example):
 
 ```rust,ignore
 let mut options = LayoutOptions::default();

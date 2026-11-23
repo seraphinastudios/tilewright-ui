@@ -181,6 +181,19 @@ fn selection_caret_and_underline_use_the_style_colours() {
     assert!(colours.contains(&[0.4, 0.5, 0.6, 1.0]));
     assert!(!colours.contains(&TEXT));
 
+    // A caret colour alone leaves the underline in the text's colour.
+    options.field_style.preedit_color = None;
+    let (_, frame) = compile(&mut system, &ui, ROW, &options);
+    let colours = solid_colours(&frame);
+    assert_eq!(colours.iter().filter(|colour| **colour == TEXT).count(), 1);
+    assert_eq!(
+        colours
+            .iter()
+            .filter(|colour| **colour == [0.4, 0.5, 0.6, 1.0])
+            .count(),
+        1
+    );
+
     // Without caret and underline colours, both take the text's, as in 0.1.1.
     options.field_style.caret_color = None;
     options.field_style.preedit_color = None;
@@ -392,4 +405,36 @@ fn compose_with_limits_charges_exactly_the_raster_sample_count() {
             ));
         }
     }
+}
+
+/// The padding moves only the composer's text: the Apply label stays at its
+/// control's corner, 18 px, as in 0.1.1.
+#[test]
+fn the_padding_leaves_the_submit_label_where_it_was() {
+    let mut system = TextSystem::new(fonts(), TextLimits::default()).unwrap();
+    let mut options = host_row_style();
+    options.submit_control = true;
+    let ui = field("label");
+    let (layout, frame) = compile(&mut system, &ui, ROW, &options);
+    let submit = layout
+        .hits
+        .iter()
+        .find(|hit| hit.widget.id == tilewright_ui::SUBMIT)
+        .unwrap()
+        .bounds;
+    let label = frame
+        .text
+        .iter()
+        .find(|text| text.widget.id == tilewright_ui::SUBMIT)
+        .unwrap();
+    assert_eq!(label.origin, [submit.x, submit.y]);
+    assert_eq!(
+        label.layout.size(),
+        system.layout("Apply", 18.0, None).unwrap().size()
+    );
+    let composer = layout.composer_bounds.unwrap();
+    assert_eq!(
+        frame.editable().unwrap().origin,
+        [composer.x + 4.0, composer.y + 1.0]
+    );
 }

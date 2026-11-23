@@ -42,8 +42,9 @@ Windows.
 What each crate version changes for a host, newest first. Every entry keeps
 the renderer at `0.7.2` and the C ABI and header as they were. Source release
 tags (`vX.Y.Z`) and crate versions are numbered separately; each release's
-notes say which crate version it owns (crate 0.1.2 is owned by the first
-release cut after it merges).
+notes say which crate version it owns: `v0.1.0` owns crate 0.1.0 and
+`v0.2.0` owns crate 0.1.1; crate 0.1.2 is owned by the source release cut by
+merging the change that introduced it.
 
 ### 0.1.2
 
