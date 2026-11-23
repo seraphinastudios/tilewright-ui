@@ -116,7 +116,7 @@ fn a_compiler_takes_no_fonts_and_checks_its_namespace() {
 }
 
 #[cfg(feature = "prototype")]
-fn fonts() -> FontPack {
+pub(super) fn fonts() -> FontPack {
     let root = std::path::PathBuf::from(
         std::env::var_os("TILEWRIGHT_UI_FONT_ROOT")
             .expect("explicit TILEWRIGHT_UI_FONT_ROOT required"),
@@ -312,6 +312,40 @@ fn unicode_geometry_dpi_resources_and_cpu_reference_frame() {
     assert!(matches!(
         first.compose(&world, first.standalone([0.0; 4]).unwrap().resources),
         Err(Error::IdentityCollision)
+    ));
+
+    // A host composing under its own limits budgets `quad_count` quads.
+    let empty = SceneBundle::from_quads(
+        1,
+        0,
+        world.viewport(),
+        [0.0; 4],
+        std::iter::empty(),
+        SceneLimits::default(),
+    )
+    .unwrap();
+    let resources = || first.standalone([0.0; 4]).unwrap().resources;
+    assert_eq!(first.quad_count(), first.quads.len());
+    assert!(first.quad_count() > 1);
+    let exact = SceneLimits {
+        maximum_quads: first.quad_count(),
+        ..SceneLimits::default()
+    };
+    let composed = first
+        .compose_with_limits(&empty, resources(), exact)
+        .unwrap();
+    assert_eq!(
+        composed.scene,
+        first.compose(&empty, resources()).unwrap().scene
+    );
+    assert_eq!(composed.scene.quads().len(), first.quad_count());
+    let short = SceneLimits {
+        maximum_quads: first.quad_count() - 1,
+        ..SceneLimits::default()
+    };
+    assert!(matches!(
+        first.compose_with_limits(&empty, resources(), short),
+        Err(Error::Scene(tilewright_scene::Error::LimitExceeded))
     ));
 }
 

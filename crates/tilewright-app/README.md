@@ -12,10 +12,12 @@ examples.
 
 ## Status
 
-This is a 0.x prototype. Its API is not stable, and the crate is not yet
-published to crates.io. It shares one version with `tilewright-ui` and
-`tilewright-ui-render`. While they are at 0.x, a breaking change to a public
-API, or a move to the renderer's next minor version, takes the next minor
-version; anything else takes the next patch version.
+This is a 0.x prototype. Its API is not stable. It is published on crates.io
+and shares one version with `tilewright-ui` and
+`tilewright-ui-render`; a host
+that uses more than one uses them at the same version. While they are at 0.x, a breaking change to a public API, or
+a move to the renderer's next minor version, takes the next minor version;
+anything else takes the next patch version. Changes per version are in
+[docs/RELEASES.md](https://github.com/seraphinastudios/tilewright-ui/blob/main/docs/RELEASES.md#crate-versions).
 
 Licensed under the MIT license.

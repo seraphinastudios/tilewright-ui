@@ -170,6 +170,25 @@ Apply, while the host owns its caption, validation and review interface. Neither
 embedded mode emits a world hit or paints a modal over host windows. The host
 still arbitrates events outside the panel and other focused controls.
 
+A Rust host that draws its own submit control lays the panel out with
+`layout_in_with` and `LayoutOptions` whose `submit_control` is `false` (since
+0.1.1): the composer then takes the whole inner width, and the layout holds no
+Apply or Send paint and no submit hit region. Enter and `Input::Activate(SUBMIT)`
+still submit. `layout_in` and every existing caller keep the control; `Demo`
+refuses the option with `InvalidInput`. The C facade and the web adapter always
+lay out the control.
+
+Reading one value of the live state does not need a snapshot: `Ui::composer_text`
+(borrowed committed text), `Ui::composer_revision`, `Ui::composer_selection` and
+`Ui::is_composing` (since 0.1.1) equal the corresponding `snapshot().composer`
+values at the moment of the call. Like a snapshot they describe the current
+state, not displayed geometry.
+
+A host that composes the shared frame into its own scene under its own limits
+reads `CompiledFrame::quad_count` to budget for the shared quads and composes
+with `CompiledFrame::compose_with_limits` (since 0.1.1); `compose` uses
+`SceneLimits::default()`.
+
 Call `set_layout` with the host viewport, panel bounds and clip before preparing
 an embedded frame. A changed supplied attachment invalidates old displayed
 geometry immediately, including a clip change with an identical effective
@@ -218,7 +237,7 @@ stored value that already holds one opens, displays and returns unchanged.
 | Composition | Preedit is spliced before marking, so markers around it keep their places and a combining preedit next to a marker gets a guard. Preedit can never hold a refused character. |
 | What the host receives | `committed`, `SubmitField` and the C copy functions carry the exact stored bytes, markers never. An untouched value round-trips byte for byte; edits elsewhere keep the stored breaks. |
 | Limits | `composer_bytes` counts committed bytes, and a preedit is checked against it as if committed. `display_text` can be longer, but never more than 3 bytes per stored byte: a 1-byte control becomes a 3-byte marker, a marker of a 2- or 3-byte stored character is at most 3 bytes, and a 3-byte guard is only added beside a neighbour of at least 2 bytes, which adds at most one guard. So `display_text.len() <= 3 * composer_bytes`, preedit included. A renderer whose text limit is below that fails such a frame with a clean error and keeps the field unchanged. The renderer lays out at most 65,536 bytes of one text, whatever its configured limits, so 21,845 is the ceiling for `composer_bytes` in a single field that may hold stored controls. |
-| Visual caret movement | `twui_move_visual` and the native example take one renderer layout step on `display_text` and map it back, through `tilewright-ui-render`'s `TextGeometry::step_caret`, which returns the new focus in committed text. A guard gives one committed position two display positions. A step that moves the display byte but not the committed byte only crossed the guard and is repeated, at most twice more, so crossing a guard no longer stalls the caret (it did in right-to-left text). A move of the affinity alone is a real stop at a direction boundary and counts as one step. In some mixed-direction arrangements a guard can still make the caret alternate between two positions, as before (for example a right-to-left letter, a Latin letter, then a prepended character before a stored break); Home, End and the pointer still work. |
+| Visual caret movement | `twui_move_visual` and the native example take one renderer layout step on `display_text` and map it back, through `tilewright-ui-render`'s `TextGeometry::step_caret`, which returns the new focus in committed text. A guard gives one committed position two display positions. A step that moves the display byte but not the committed byte only crossed the guard and is repeated, so crossing a guard no longer stalls the caret (it did in right-to-left text). The stepping rule (since 0.1.1): a layout step that changes only the caret's affinity is a stop if and only if the two caret rectangles differ by more than 1/64 logical pixel in x or y; otherwise it is repeated, like a guard crossing, within at most four layout steps per call. So a move of the affinity alone to a visibly different place, a direction boundary, is a real stop and counts as one step, while two caret stops that the layout places a rounding error apart (in 0.1.0 a press next to a marker, or in plain right-to-left text, at 20 px could do nothing) are one. In some mixed-direction arrangements a guard can still make the caret alternate between two positions, as before (for example a right-to-left letter, a Latin letter, then a prepended character before a stored break), and a step can still land on another committed position drawn at the same place; Home, End and the pointer still work. |
 
 `mark_stored_breaks` applies the same display to any stored string, for
 example a read-only row. A host that describes a stored value ("contains 2

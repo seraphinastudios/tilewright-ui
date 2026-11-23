@@ -1292,7 +1292,7 @@ dependencies = [
 
 [[package]]
 name = "tilewright-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tilewright-ui",
 ]
@@ -1379,14 +1379,14 @@ checksum = "eea3ad0ddfd97df90a5dacd9025b2b98c5f362bb23ce7cee3e894df8d22e3b83"
 
 [[package]]
 name = "tilewright-ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "unicode-segmentation",
 ]
 
 [[package]]
 name = "tilewright-ui-ffi"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tilewright-app",
  "tilewright-ui",
@@ -1395,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "tilewright-ui-native-demo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "sdl3",
  "tilewright-app",
@@ -1405,7 +1405,7 @@ dependencies = [
 
 [[package]]
 name = "tilewright-ui-render"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tilewright-render-api",
  "tilewright-render-resources",
@@ -1417,7 +1417,7 @@ dependencies = [
 
 [[package]]
 name = "tilewright-ui-web"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde_json",
  "tilewright-app",

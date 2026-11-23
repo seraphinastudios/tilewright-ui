@@ -116,11 +116,15 @@ impl TextGeometry {
     /// is one marker glyph. A marker with a zero-width guard has two display
     /// positions for one committed position, so a step that moves the display
     /// byte but not the committed byte only crossed the guard: it is repeated,
-    /// at most twice more (three layout steps in all), so the caret does not
-    /// stall there. A step that moves the affinity alone is a real visual stop
-    /// at a direction boundary and is returned at once, as is a step that does
-    /// not move. In some mixed-direction text a guard can still make the caret
-    /// alternate between two positions.
+    /// so the caret does not stall there. A step that moves the affinity alone
+    /// and leaves the caret where it was drawn (the two caret rectangles' x and
+    /// y each within 1/64 logical pixel) is not a stop either and
+    /// is repeated: the layout can give one position two caret stops that
+    /// differ only by floating-point rounding. A step that moves the affinity
+    /// alone to a visibly different place is a real visual stop at a direction
+    /// boundary and is returned at once, as is a step that does not move. One
+    /// call takes at most four layout steps. In some mixed-direction text a
+    /// guard can still make the caret alternate between two positions.
     ///
     /// Fails with `UiError::InvalidInput`, without stepping, while a
     /// composition is active or when this text is not the editable one
@@ -133,15 +137,43 @@ impl TextGeometry {
             .snapshot
             .as_ref()
             .ok_or(tilewright_ui::UiError::InvalidInput)?;
-        step_visual(snapshot, |cursor| self.move_visual(cursor, motion))
+        step_visual(
+            snapshot,
+            |cursor| self.move_visual(cursor, motion),
+            |cursor| {
+                self.layout
+                    .caret(renderer_cursor(cursor))
+                    .map(|rect| [rect.x, rect.y])
+            },
+        )
     }
 }
 
+/// How far apart, in logical scene pixels on each axis, two caret
+/// rectangles may be and still count as the same drawn position when
+/// [`TextGeometry::step_caret`] decides whether a change of affinity alone
+/// moved the caret: 1/64 px.
+///
+/// The rounding it absorbs is a few units in the last place of an `f32`
+/// coordinate (97.700005 against 97.7 at 20 px is 8e-6 px), which stays below
+/// 1/64 px for any coordinate under 131072 px. A genuine direction boundary
+/// puts its two stops at least one glyph advance apart, whole pixels, and
+/// 1/64 logical px is under 1/16 of a physical pixel at any scale up to 4.
+const SAME_CARET_POSITION: f32 = 1.0 / 64.0;
+
+/// Layout steps one [`TextGeometry::step_caret`] call may take. One
+/// committed position has at most two display positions (beside a marker's
+/// guard), each with at most two affinities, so three steps can stay on it
+/// and the fourth leaves it.
+const MAXIMUM_STEPS: usize = 4;
+
 /// The stepping loop behind [`TextGeometry::step_caret`]. `step` moves a
-/// display cursor one position; tests drive it with synthetic layouts.
+/// display cursor one position and `caret` gives a display cursor's caret
+/// position; tests drive both with synthetic layouts.
 fn step_visual(
     snapshot: &TextInputSnapshot,
     mut step: impl FnMut(tilewright_ui::TextCursor) -> tilewright_ui::TextCursor,
+    caret: impl Fn(tilewright_ui::TextCursor) -> Option<[f32; 2]>,
 ) -> Result<tilewright_ui::TextCursor, tilewright_ui::UiError> {
     if snapshot.composition.is_some() {
         return Err(tilewright_ui::UiError::InvalidInput);
@@ -149,19 +181,31 @@ fn step_visual(
     let start = snapshot.selection.focus;
     let mut display = snapshot.display_selection.focus;
     let mut result = start;
-    for _ in 0..3 {
+    for _ in 0..MAXIMUM_STEPS {
         let next = step(display);
         if next == display {
             break;
         }
         let moved = next.byte != display.byte;
+        let unseen = !moved && same_position(caret(display), caret(next));
         display = next;
         result = snapshot.committed_cursor(display)?;
+        if unseen {
+            continue;
+        }
         if result.byte != start.byte || !moved {
             break;
         }
     }
     Ok(result)
+}
+
+/// Whether two caret positions are the same drawn position; a cursor with
+/// no caret is never the same as anything.
+fn same_position(a: Option<[f32; 2]>, b: Option<[f32; 2]>) -> bool {
+    a.zip(b).is_some_and(|(a, b)| {
+        (a[0] - b[0]).abs() <= SAME_CARET_POSITION && (a[1] - b[1]).abs() <= SAME_CARET_POSITION
+    })
 }
 
 /// Compiles frames with a text system the host lends for each call.
@@ -477,11 +521,32 @@ impl CompiledFrame {
     pub fn editable(&self) -> Option<&TextGeometry> {
         self.text.iter().find(|text| text.snapshot.is_some())
     }
+    /// The number of quads this frame adds to a composed scene. A host that
+    /// composes under its own scene limits budgets this many quads on top of
+    /// its world's (see [`CompiledFrame::compose_with_limits`]).
+    pub fn quad_count(&self) -> usize {
+        self.quads.len()
+    }
     /// Checks the reserved namespace at composition, not just construction.
+    /// The composed scene is checked against the default scene limits; it is
+    /// [`CompiledFrame::compose_with_limits`] with `SceneLimits::default()`.
     pub fn compose(
         &self,
         world: &SceneBundle,
         world_resources: Arc<dyn ResourceProvider>,
+    ) -> Result<Presentation, Error> {
+        self.compose_with_limits(world, world_resources, SceneLimits::default())
+    }
+    /// [`CompiledFrame::compose`] under the host's scene limits: the composed
+    /// scene, the world's quads followed by this frame's
+    /// [`CompiledFrame::quad_count`] quads, is checked against `limits`
+    /// (quad count, raster samples, viewport) instead of the defaults. A scene
+    /// over them fails with `Error::Scene`; nothing changes.
+    pub fn compose_with_limits(
+        &self,
+        world: &SceneBundle,
+        world_resources: Arc<dyn ResourceProvider>,
+        limits: SceneLimits,
     ) -> Result<Presentation, Error> {
         if [world.viewport().width, world.viewport().height] != self.viewport.physical_size {
             return Err(Error::InvalidViewport);
@@ -504,7 +569,7 @@ impl CompiledFrame {
                 .iter()
                 .copied()
                 .chain(self.quads.iter().copied()),
-            SceneLimits::default(),
+            limits,
         )?;
         Ok(Presentation {
             scene,

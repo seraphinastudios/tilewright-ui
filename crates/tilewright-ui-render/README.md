@@ -8,11 +8,13 @@ architecture and the examples.
 
 ## Status
 
-This is a 0.x prototype. Its API is not stable, and the crate is not yet
-published to crates.io. It shares one version with `tilewright-ui` and
-`tilewright-app`. While they are at 0.x, a breaking change to a public API, or
+This is a 0.x prototype. Its API is not stable. It is published on crates.io
+and shares one version with `tilewright-ui` and
+`tilewright-app`; a host
+that uses more than one uses them at the same version. While they are at 0.x, a breaking change to a public API, or
 a move to the renderer's next minor version, takes the next minor version;
-anything else takes the next patch version.
+anything else takes the next patch version. Changes per version are in
+[docs/RELEASES.md](https://github.com/seraphinastudios/tilewright-ui/blob/main/docs/RELEASES.md#crate-versions).
 
 Licensed under the MIT license. Fonts are separate data under their own
 licences; this crate contains none and never searches for system fonts.
@@ -52,7 +54,9 @@ each `CompiledFrame` while a frame is prepared, in flight or displayed.
 Namespaces are checked again when composing an existing world scene.
 
 `CompiledFrame::compose` returns an ordinary scene and resource provider for the
-existing renderer. `standalone` creates an overlay. The optional `prototype`
+existing renderer, checked against `SceneLimits::default()`. A host with
+limits of its own reads `CompiledFrame::quad_count` to budget for the shared
+quads and calls `CompiledFrame::compose_with_limits` with its `SceneLimits`. `standalone` creates an overlay. The optional `prototype`
 feature enables `Presentation::render_rgba`, using the existing CPU reference
 renderer; it is not a production GPU path or performance qualification.
 A transparent reference target returns premultiplied RGB; use premultiplied
@@ -82,7 +86,9 @@ immutable layout that produced the glyphs. Hosts pair it with the acknowledged
 application frame stamp before pointer selection, visual movement or IME use.
 `TextGeometry::step_caret` moves the editable text's caret one visual step and
 returns the new focus in committed text, stepping past the zero-width guard of
-a stored-break marker (see `docs/CONTRACT.md`, Single-line text).
+a stored-break marker, and past a change of affinity alone that leaves the
+caret drawn within 1/64 logical pixel of where it was (two stops a rounding
+error apart are one place; see `docs/CONTRACT.md`, Single-line text).
 Composer text stays complete even when horizontally clipped/scrolled. Current
 renderer primitive text is unwrapped; history lines clip within their bounds.
 

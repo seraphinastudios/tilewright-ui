@@ -305,6 +305,30 @@ impl Ui {
             generation: self.generation,
         }
     }
+    /// The composer's committed text (the single field's draft in
+    /// [`Composition::SingleField`]), borrowed: `snapshot().composer.committed`
+    /// without copying a snapshot. Stored line breaks are included; an open
+    /// composition's preedit is not. Like every accessor it reads the current
+    /// state, which the next accepted input may change.
+    pub fn composer_text(&self) -> &str {
+        self.composer.text()
+    }
+    /// The composer's text revision, `snapshot().composer.revision`, whether
+    /// or not the composer is focused (unlike [`Ui::text_target`]). It moves
+    /// on every accepted change to the text, selection or composition.
+    pub fn composer_revision(&self) -> TextRevision {
+        self.composer.revision()
+    }
+    /// The composer's selection in committed text,
+    /// `snapshot().composer.selection`.
+    pub fn composer_selection(&self) -> TextSelection {
+        self.composer.selection()
+    }
+    /// Whether a composition (IME preedit) is open in the composer,
+    /// `snapshot().composer.composition.is_some()`.
+    pub fn is_composing(&self) -> bool {
+        self.composer.is_composing()
+    }
     pub fn text_target(&self) -> Option<TextTarget> {
         (self.control.focused_widget == Some(self.composer_widget())).then(|| TextTarget {
             widget: self.composer_widget(),
@@ -988,15 +1012,56 @@ pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiErr
     layout_in(snapshot, viewport, full, full)
 }
 
+/// Choices for [`layout_in_with`]. Start from `LayoutOptions::default()`,
+/// which is what [`layout_in`] uses, and set the fields to change; later
+/// versions may add fields with defaults that keep today's layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct LayoutOptions {
+    /// Lay out the submit control: Apply in [`Composition::SingleField`],
+    /// Send in [`Composition::ChatPanel`]. Default `true`.
+    ///
+    /// With `false` the composer takes the whole inner width of the
+    /// attachment and the layout holds no submit paint and no submit hit
+    /// region. Submitting still works: Enter does, and so does
+    /// `Input::Activate(SUBMIT)`, which a host with its own control sends.
+    /// Only the embedded compositions have the option; with
+    /// [`Composition::Demo`], `false` is refused with `UiError::InvalidInput`.
+    pub submit_control: bool,
+}
+impl Default for LayoutOptions {
+    fn default() -> Self {
+        Self {
+            submit_control: true,
+        }
+    }
+}
+
 /// Layout in host logical coordinates, with every paint and hit clipped to the
 /// attachment. Embedded modes never describe a world viewport or host overlay.
+/// It is [`layout_in_with`] with `LayoutOptions::default()`.
 pub fn layout_in(
     snapshot: &UiSnapshot,
     viewport: Viewport,
     bounds: Rect,
     clip: Rect,
 ) -> Result<Layout, UiError> {
+    layout_in_with(snapshot, viewport, bounds, clip, LayoutOptions::default())
+}
+
+/// [`layout_in`] with [`LayoutOptions`]; for example, a single field without
+/// its Apply control for a host that draws its own.
+pub fn layout_in_with(
+    snapshot: &UiSnapshot,
+    viewport: Viewport,
+    bounds: Rect,
+    clip: Rect,
+    options: LayoutOptions,
+) -> Result<Layout, UiError> {
     let clip = validate_layout(viewport, bounds, clip)?;
+    if snapshot.composition == Composition::Demo && !options.submit_control {
+        return Err(UiError::InvalidInput);
+    }
     if bounds.width == 0.0 || bounds.height == 0.0 {
         return Ok(Layout {
             ui_revision: snapshot.revision,
@@ -1040,7 +1105,7 @@ pub fn layout_in(
         layout.viewport = viewport;
         return Ok(layout);
     }
-    embedded_layout(snapshot, viewport, bounds, clip)
+    embedded_layout(snapshot, viewport, bounds, clip, options)
 }
 
 // Keep the bounded declarative paint sequence in presenter order.
@@ -1050,6 +1115,7 @@ fn embedded_layout(
     viewport: Viewport,
     bounds: Rect,
     clip: Rect,
+    options: LayoutOptions,
 ) -> Result<Layout, UiError> {
     let singleton = |id| WidgetRef {
         id,
@@ -1059,8 +1125,16 @@ fn embedded_layout(
     let inner_width = (bounds.width - inset * 2.0).max(0.0);
     let inner_height = (bounds.height - inset * 2.0).max(0.0);
     let height = 36.0_f32.min(inner_height);
-    let button_width = 80.0_f32.min(inner_width);
-    let gap = 8.0_f32.min((inner_width - button_width).max(0.0));
+    let button_width = if options.submit_control {
+        80.0_f32.min(inner_width)
+    } else {
+        0.0
+    };
+    let gap = if options.submit_control {
+        8.0_f32.min((inner_width - button_width).max(0.0))
+    } else {
+        0.0
+    };
     let composer = Rect {
         x: bounds.x + inset,
         y: bounds.y + bounds.height - inset - height,
@@ -1133,35 +1207,39 @@ fn embedded_layout(
             color: [1.0; 4],
             text_revision: Some(snapshot.composer.revision),
         });
-        paint.push(Paint::Rectangle {
-            bounds: submit,
-            clip,
-            color: [0.2, 0.35, 0.6, 1.0],
-        });
-        paint.push(Paint::Text {
-            widget: singleton(SUBMIT),
-            bounds: submit,
-            clip: submit.intersection(clip)?,
-            text: if snapshot.composition == Composition::SingleField {
-                "Apply"
-            } else {
-                "Send"
-            }
-            .into(),
-            font: FontRole::Button,
-            color: [1.0; 4],
-            text_revision: None,
-        });
+        if options.submit_control {
+            paint.push(Paint::Rectangle {
+                bounds: submit,
+                clip,
+                color: [0.2, 0.35, 0.6, 1.0],
+            });
+            paint.push(Paint::Text {
+                widget: singleton(SUBMIT),
+                bounds: submit,
+                clip: submit.intersection(clip)?,
+                text: if snapshot.composition == Composition::SingleField {
+                    "Apply"
+                } else {
+                    "Send"
+                }
+                .into(),
+                font: FontRole::Button,
+                color: [1.0; 4],
+                text_revision: None,
+            });
+        }
         hits.push(HitRegion {
             widget: snapshot.composer_widget,
             bounds: composer,
             clip,
         });
-        hits.push(HitRegion {
-            widget: singleton(SUBMIT),
-            bounds: submit,
-            clip,
-        });
+        if options.submit_control {
+            hits.push(HitRegion {
+                widget: singleton(SUBMIT),
+                bounds: submit,
+                clip,
+            });
+        }
     }
     if snapshot.control.modal_open {
         hits.clear();
