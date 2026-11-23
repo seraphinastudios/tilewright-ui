@@ -367,9 +367,15 @@ impl UiCompiler {
                 } => {
                     validate_rect(*bounds)?;
                     validate_rect(*clip)?;
-                    let size = match font {
-                        FontRole::Body | FontRole::Button => 18.0,
-                        FontRole::Composer => 20.0,
+                    // The composer's text follows the layout's field style
+                    // (20 px and no padding by default, as in 0.1.1).
+                    let style = layout.field_style();
+                    let (size, padding) = match font {
+                        FontRole::Body | FontRole::Button => (18.0, [0.0; 3]),
+                        FontRole::Composer => (
+                            style.text_size,
+                            [style.padding_left, style.padding_top, style.padding_right],
+                        ),
                     };
                     let shaped = system.layout(text, size, None)?;
                     let editable = if let Some(revision) = text_revision {
@@ -383,7 +389,7 @@ impl UiCompiler {
                     } else {
                         None
                     };
-                    let mut origin = [bounds.x, bounds.y];
+                    let mut origin = [padded(bounds.x, padding[0]), padded(bounds.y, padding[1])];
                     let target = Rect {
                         x: 0.0,
                         y: 0.0,
@@ -403,7 +409,8 @@ impl UiCompiler {
                         shaped
                             .caret(renderer_cursor(input.display_selection.anchor))
                             .ok_or(Error::StaleSnapshot)?;
-                        origin[0] -= (caret.x + caret.width - bounds.width).max(0.0);
+                        let available = bounds.width - padding[0] - padding[2];
+                        origin[0] -= (caret.x + caret.width - available).max(0.0);
                         for selected in shaped.selection_rects(
                             renderer_cursor(input.display_selection.anchor),
                             cursor,
@@ -413,7 +420,7 @@ impl UiCompiler {
                                 text_clip,
                                 id,
                                 order,
-                                [0.23, 0.40, 0.62, 1.0],
+                                style.selection_color,
                             ));
                         }
                         if let Some(composition) = &input.composition {
@@ -427,7 +434,7 @@ impl UiCompiler {
                                     text_clip,
                                     id,
                                     order + 2,
-                                    *color,
+                                    style.preedit_color.unwrap_or(*color),
                                 ));
                             }
                         }
@@ -437,7 +444,7 @@ impl UiCompiler {
                                 text_clip,
                                 id,
                                 order + 2,
-                                *color,
+                                style.caret_color.unwrap_or(*color),
                             ));
                         }
                     }
@@ -530,6 +537,23 @@ impl CompiledFrame {
     pub fn quad_count(&self) -> usize {
         self.quads.len()
     }
+    /// The raster samples this frame's quads add to a composed scene, as
+    /// `SceneLimits::maximum_raster_samples` counts them: for each quad, the
+    /// pixels of its bounding box (or, for a quad that is not an axis-aligned
+    /// rectangle, of each of its two triangles' boxes) clipped to the frame's
+    /// physical viewport in whole pixels, times
+    /// `tilewright_scene::GLOW_SAMPLES_PER_PIXEL` for a glow with a nonzero
+    /// radius, summed with saturation. A host composing under its own limits
+    /// budgets this many samples on top of its world's, as it budgets
+    /// [`CompiledFrame::quad_count`] quads: [`CompiledFrame::compose_with_limits`]
+    /// accepts the frame over a world exactly when the two together are
+    /// within `maximum_raster_samples` (and the other limits hold).
+    pub fn raster_sample_count(&self) -> u64 {
+        let [width, height] = self.viewport.physical_size;
+        self.quads.iter().fold(0_u64, |total, quad| {
+            total.saturating_add(raster_samples(quad, width, height))
+        })
+    }
     /// Checks the reserved namespace at composition, not just construction.
     /// The composed scene is checked against the default scene limits; it is
     /// [`CompiledFrame::compose_with_limits`] with `SceneLimits::default()`.
@@ -600,6 +624,44 @@ impl CompiledFrame {
         })
     }
 }
+/// One quad's raster samples in a `width` by `height` scene, counted as
+/// `tilewright-scene` 0.7.2 counts them against
+/// `SceneLimits::maximum_raster_samples` (its documented rule: an aligned
+/// quad's box, or both triangles' boxes, clipped in whole pixels, times the
+/// glow factor). `tests.rs` checks it against `compose_with_limits`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn raster_samples(quad: &Quad, width: u32, height: u32) -> u64 {
+    let span = |low: f32, high: f32, size: u32| {
+        let low = f64::from(low).floor().max(0.0);
+        let high = f64::from(high).ceil().min(f64::from(size));
+        if high > low { (high - low) as u64 } else { 0 }
+    };
+    let pixels = |points: &[[f32; 2]]| {
+        let (mut left, mut right, mut top, mut bottom) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        for point in points {
+            left = left.min(point[0]);
+            right = right.max(point[0]);
+            top = top.min(point[1]);
+            bottom = bottom.max(point[1]);
+        }
+        span(left, right, width).saturating_mul(span(top, bottom, height))
+    };
+    let [first, second, third, fourth] = quad.positions;
+    let covered = if quad.aligned_rect().is_some() {
+        pixels(&quad.positions)
+    } else {
+        pixels(&[first, second, third]).saturating_add(pixels(&[first, third, fourth]))
+    };
+    let glowing = quad
+        .glow
+        .is_some_and(|glow| glow.radius_uv.iter().any(|radius| *radius > 0.0));
+    covered.saturating_mul(if glowing {
+        tilewright_scene::GLOW_SAMPLES_PER_PIXEL
+    } else {
+        1
+    })
+}
+
 pub struct Presentation {
     pub scene: SceneBundle,
     pub resources: Arc<dyn ResourceProvider>,
@@ -662,6 +724,14 @@ fn validate_rect(value: Rect) -> Result<(), Error> {
         Err(Error::InvalidViewport)
     } else {
         Ok(())
+    }
+}
+/// `value` moved by `padding`; a zero padding leaves its bits as they are.
+fn padded(value: f32, padding: f32) -> f32 {
+    if padding == 0.0 {
+        value
+    } else {
+        value + padding
     }
 }
 fn translated(value: UiRect, origin: [f32; 2]) -> Rect {
@@ -748,5 +818,7 @@ fn composition_rects(layout: &UnicodeLayout, range: std::ops::Range<usize>) -> V
 
 #[cfg(test)]
 mod step_tests;
+#[cfg(all(test, feature = "prototype"))]
+mod style_tests;
 #[cfg(test)]
 mod tests;

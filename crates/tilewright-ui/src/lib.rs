@@ -816,7 +816,7 @@ pub struct HitRegion {
     pub bounds: Rect,
     pub clip: Rect,
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Layout {
     pub ui_revision: UiRevision,
@@ -824,6 +824,34 @@ pub struct Layout {
     pub paint: Vec<Paint>,
     pub hits: Vec<HitRegion>,
     pub composer_bounds: Option<Rect>,
+    // The validated style this layout was made with; private so a compile
+    // can never read a style other than the one the layout applied.
+    field_style: FieldStyle,
+}
+impl Layout {
+    /// The single field's style this layout was laid out with
+    /// (`LayoutOptions::field_style`; the default for [`layout_in`] and
+    /// [`layout`]). A compiler draws the composer's text with it, so the
+    /// text size, padding and colours a layout was made with are the ones
+    /// its frame is shaped, measured, hit-tested and drawn with.
+    pub fn field_style(&self) -> &FieldStyle {
+        &self.field_style
+    }
+}
+// Written out so a layout with the default style prints as 0.1.1 printed it.
+impl std::fmt::Debug for Layout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = f.debug_struct("Layout");
+        out.field("ui_revision", &self.ui_revision)
+            .field("viewport", &self.viewport)
+            .field("paint", &self.paint)
+            .field("hits", &self.hits)
+            .field("composer_bounds", &self.composer_bounds);
+        if self.field_style != FieldStyle::default() {
+            out.field("field_style", &self.field_style);
+        }
+        out.finish()
+    }
 }
 /// The single neutral layout used by all presenters. Text is unshaped.
 // This declarative bounded prototype layout is intentionally kept in paint order.
@@ -982,6 +1010,7 @@ fn demo_layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiEr
         paint,
         hits,
         composer_bounds: snapshot.composer_visible.then_some(composer),
+        field_style: FieldStyle::default(),
     })
 }
 
@@ -1041,11 +1070,162 @@ pub struct LayoutOptions {
     /// Only the embedded compositions have the option; with
     /// [`Composition::Demo`], `false` is refused with `UiError::InvalidInput`.
     pub submit_control: bool,
+    /// How the single field's composer is sized and drawn. Default
+    /// `FieldStyle::default()`, the 0.1.1 look. Only
+    /// [`Composition::SingleField`] takes another style; the other
+    /// compositions refuse one with `UiError::InvalidInput`.
+    pub field_style: FieldStyle,
 }
 impl Default for LayoutOptions {
     fn default() -> Self {
         Self {
             submit_control: true,
+            field_style: FieldStyle::default(),
+        }
+    }
+}
+
+/// The single field's metrics and colours, in [`LayoutOptions`]. Start from
+/// `FieldStyle::default()`, which lays out and draws the field exactly as
+/// 0.1.1 did, and set the fields to change; later versions may add fields
+/// with defaults that keep today's look.
+///
+/// The layout uses the geometry (`inset`, `height`) and the text and box
+/// colours, and keeps the whole style in the [`Layout`]
+/// ([`Layout::field_style`]); the compiler reads the text size, the padding
+/// and the selection, caret and underline colours from there. So one style
+/// governs shaping, measurement, hit-testing, the caret, the input method
+/// area and caret steps of a given layout.
+///
+/// Colours are RGBA with each channel in 0–1 and straight (not
+/// premultiplied) alpha, like every [`Paint`] colour. They are not converted
+/// between colour spaces: the Tilewright renderer blends them as given
+/// (source over, by alpha) and writes them unchanged to its non-sRGB target,
+/// so they are the display's own encoded values, normally sRGB.
+///
+/// [`layout_in_with`] refuses a style with `UiError::InvalidInput` when a
+/// length is not finite, is negative, or is over 8192 (the largest logical
+/// viewport the renderer accepts), when `height` is zero, when `text_size`
+/// is outside 1–256 (the renderer's shaping range), or when a colour channel
+/// is not finite or outside 0–1.
+///
+/// ```
+/// use tilewright_ui::{Composition, FieldStyle, Limits, LayoutOptions, Rect, Ui, Viewport};
+///
+/// let ui = Ui::with_composition(Limits::default(), Composition::SingleField)?;
+/// // A flat 30 px row with 18 px text, drawn on the row's own background.
+/// let mut style = FieldStyle::default();
+/// style.text_size = 18.0;
+/// style.inset = 0.0;
+/// style.height = 30.0;
+/// style.padding_left = 4.0;
+/// style.padding_top = 1.0;
+/// style.box_color = Some([0.12, 0.32, 0.47, 1.0]);
+/// let mut options = LayoutOptions::default();
+/// options.submit_control = false;
+/// options.field_style = style;
+/// let viewport = Viewport::new(320.0, 200.0, 1.0)?;
+/// let row = Rect { x: 10.0, y: 40.0, width: 300.0, height: 30.0 };
+/// let layout = tilewright_ui::layout_in_with(&ui.snapshot(), viewport, row, row, &options)?;
+/// assert_eq!(layout.composer_bounds, Some(row));
+/// assert_eq!(layout.field_style().text_size, 18.0);
+/// # Ok::<(), tilewright_ui::UiError>(())
+/// ```
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct FieldStyle {
+    /// The composer's text size in logical pixels. Default `20.0`.
+    pub text_size: f32,
+    /// The composer box's height; it is at most the attachment's height
+    /// less twice the inset, and sits at the bottom of the attachment.
+    /// Default `36.0`.
+    pub height: f32,
+    /// The space between the attachment's edges and the composer box (and
+    /// the submit control); at most half the attachment's width and height.
+    /// Default `8.0`.
+    pub inset: f32,
+    /// The space from the box's left edge to the text's origin. Default `0.0`.
+    pub padding_left: f32,
+    /// The space from the box's top edge to the text's origin (the top of its
+    /// line). Default `0.0`.
+    pub padding_top: f32,
+    /// When the text scrolls to keep the caret in view, the caret's right
+    /// edge stays at least this far from the box's right edge. Default `0.0`.
+    ///
+    /// Text, selection, caret and underline are clipped to the box, not to
+    /// the padding: scrolled text shows in the padding as in the rest of
+    /// the box. When `padding_left` and `padding_right` leave less room than
+    /// the caret's width, this right margin wins: the text is scrolled so
+    /// the caret keeps it, and starts left of `padding_left`.
+    pub padding_right: f32,
+    /// The composer's text. Default white, `[1.0; 4]`.
+    pub text_color: [f32; 4],
+    /// The composer box's fill, or `None` for no box: the host draws the
+    /// background itself. Default `Some([0.18, 0.2, 0.25, 1.0])`.
+    pub box_color: Option<[f32; 4]>,
+    /// The selection's highlight, under the text. Default
+    /// `[0.23, 0.40, 0.62, 1.0]`.
+    pub selection_color: [f32; 4],
+    /// The caret, over the text; `None` draws it in the text's colour.
+    /// Default `None`.
+    pub caret_color: Option<[f32; 4]>,
+    /// The input method preedit's underline, over the text; `None` draws it
+    /// in the text's colour. Default `None`.
+    pub preedit_color: Option<[f32; 4]>,
+}
+impl Default for FieldStyle {
+    fn default() -> Self {
+        Self {
+            text_size: 20.0,
+            height: 36.0,
+            inset: 8.0,
+            padding_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            text_color: [1.0; 4],
+            box_color: Some([0.18, 0.2, 0.25, 1.0]),
+            selection_color: [0.23, 0.40, 0.62, 1.0],
+            caret_color: None,
+            preedit_color: None,
+        }
+    }
+}
+impl FieldStyle {
+    /// The largest length a style takes, in logical pixels.
+    const MAXIMUM_LENGTH: f32 = 8192.0;
+
+    fn validate(&self) -> Result<(), UiError> {
+        let length =
+            |value: f32| value.is_finite() && (0.0..=Self::MAXIMUM_LENGTH).contains(&value);
+        let color = |value: &[f32; 4]| {
+            value
+                .iter()
+                .all(|channel| channel.is_finite() && (0.0..=1.0).contains(channel))
+        };
+        let lengths = [
+            self.height,
+            self.inset,
+            self.padding_left,
+            self.padding_top,
+            self.padding_right,
+        ];
+        let colors = [
+            Some(self.text_color),
+            self.box_color,
+            Some(self.selection_color),
+        ]
+        .into_iter()
+        .chain([self.caret_color, self.preedit_color])
+        .flatten();
+        if lengths.into_iter().all(length)
+            && self.height > 0.0
+            && self.text_size.is_finite()
+            && (1.0..=256.0).contains(&self.text_size)
+            && colors.into_iter().all(|value| color(&value))
+        {
+            Ok(())
+        } else {
+            Err(UiError::InvalidInput)
         }
     }
 }
@@ -1075,6 +1255,12 @@ pub fn layout_in_with(
     if snapshot.composition == Composition::Demo && !options.submit_control {
         return Err(UiError::InvalidInput);
     }
+    options.field_style.validate()?;
+    if snapshot.composition != Composition::SingleField
+        && options.field_style != FieldStyle::default()
+    {
+        return Err(UiError::InvalidInput);
+    }
     if bounds.width == 0.0 || bounds.height == 0.0 {
         return Ok(Layout {
             ui_revision: snapshot.revision,
@@ -1082,6 +1268,7 @@ pub fn layout_in_with(
             paint: Vec::new(),
             hits: Vec::new(),
             composer_bounds: None,
+            field_style: options.field_style.clone(),
         });
     }
     if snapshot.composition == Composition::Demo {
@@ -1134,10 +1321,11 @@ fn embedded_layout(
         id,
         generation: WidgetGeneration(1),
     };
-    let inset = 8.0_f32.min(bounds.width / 2.0).min(bounds.height / 2.0);
+    let style = &options.field_style;
+    let inset = style.inset.min(bounds.width / 2.0).min(bounds.height / 2.0);
     let inner_width = (bounds.width - inset * 2.0).max(0.0);
     let inner_height = (bounds.height - inset * 2.0).max(0.0);
-    let height = 36.0_f32.min(inner_height);
+    let height = style.height.min(inner_height);
     let button_width = if options.submit_control {
         80.0_f32.min(inner_width)
     } else {
@@ -1206,18 +1394,20 @@ fn embedded_layout(
         }
     }
     if snapshot.composer_visible {
-        paint.push(Paint::Rectangle {
-            bounds: composer,
-            clip,
-            color: [0.18, 0.2, 0.25, 1.0],
-        });
+        if let Some(color) = style.box_color {
+            paint.push(Paint::Rectangle {
+                bounds: composer,
+                clip,
+                color,
+            });
+        }
         paint.push(Paint::Text {
             widget: snapshot.composer_widget,
             bounds: composer,
             clip: composer.intersection(clip)?,
             text: snapshot.composer.display_text.clone(),
             font: FontRole::Composer,
-            color: [1.0; 4],
+            color: style.text_color,
             text_revision: Some(snapshot.composer.revision),
         });
         if options.submit_control {
@@ -1263,6 +1453,7 @@ fn embedded_layout(
         paint,
         hits,
         composer_bounds: snapshot.composer_visible.then_some(composer),
+        field_style: options.field_style.clone(),
     })
 }
 

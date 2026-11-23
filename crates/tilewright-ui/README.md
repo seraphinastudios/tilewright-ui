@@ -31,6 +31,29 @@ options.submit_control = false;
 let layout = layout_in_with(&ui.snapshot(), viewport, bounds, clip, &options)?;
 ```
 
+The options' `field_style` (a `FieldStyle`, since 0.1.2) sizes and colours
+the single field: its text size, the composer box's height and inset, the
+text's padding inside the box, and the colours of the text, the box (or no
+box, for a host that draws its own background), the selection, the caret and
+the preedit underline. The default is the look of earlier versions. The layout
+keeps the style (`Layout::field_style`), and `tilewright-ui-render` shapes,
+measures, hit-tests and draws the field's text with it, so a layout and its
+frame always agree. Only `SingleField` takes a style other than the default;
+nonsensical values are refused with `InvalidInput`. `FieldStyle` is
+`#[non_exhaustive]` too (the `FieldStyle` doc test runs an equivalent
+example):
+
+```rust,ignore
+let mut options = LayoutOptions::default();
+options.submit_control = false;
+options.field_style.text_size = 18.0;
+options.field_style.inset = 0.0;
+options.field_style.height = 30.0;
+options.field_style.padding_left = 4.0;
+options.field_style.box_color = Some([0.12, 0.32, 0.47, 1.0]);
+let layout = layout_in_with(&ui.snapshot(), viewport, row, row, &options)?;
+```
+
 ## Status
 
 This is a 0.x prototype. Its API is not stable. It is published on crates.io
