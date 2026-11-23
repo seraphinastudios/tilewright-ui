@@ -818,5 +818,7 @@ fn composition_rects(layout: &UnicodeLayout, range: std::ops::Range<usize>) -> V
 
 #[cfg(test)]
 mod step_tests;
+#[cfg(all(test, feature = "prototype"))]
+mod style_tests;
 #[cfg(test)]
 mod tests;
