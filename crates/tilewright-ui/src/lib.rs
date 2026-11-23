@@ -1015,7 +1015,20 @@ pub fn layout(snapshot: &UiSnapshot, viewport: Viewport) -> Result<Layout, UiErr
 /// Choices for [`layout_in_with`]. Start from `LayoutOptions::default()`,
 /// which is what [`layout_in`] uses, and set the fields to change; later
 /// versions may add fields with defaults that keep today's layout.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+///
+/// ```
+/// use tilewright_ui::{Composition, Limits, LayoutOptions, Rect, Ui, Viewport, layout_in_with};
+///
+/// let ui = Ui::with_composition(Limits::default(), Composition::SingleField)?;
+/// let mut options = LayoutOptions::default();
+/// options.submit_control = false;
+/// let viewport = Viewport::new(320.0, 200.0, 1.0)?;
+/// let bounds = Rect { x: 0.0, y: 0.0, width: 320.0, height: 52.0 };
+/// let layout = layout_in_with(&ui.snapshot(), viewport, bounds, bounds, &options)?;
+/// assert!(layout.hits.iter().all(|hit| hit.widget.id != tilewright_ui::SUBMIT));
+/// # Ok::<(), tilewright_ui::UiError>(())
+/// ```
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct LayoutOptions {
     /// Lay out the submit control: Apply in [`Composition::SingleField`],
@@ -1046,7 +1059,7 @@ pub fn layout_in(
     bounds: Rect,
     clip: Rect,
 ) -> Result<Layout, UiError> {
-    layout_in_with(snapshot, viewport, bounds, clip, LayoutOptions::default())
+    layout_in_with(snapshot, viewport, bounds, clip, &LayoutOptions::default())
 }
 
 /// [`layout_in`] with [`LayoutOptions`]; for example, a single field without
@@ -1056,7 +1069,7 @@ pub fn layout_in_with(
     viewport: Viewport,
     bounds: Rect,
     clip: Rect,
-    options: LayoutOptions,
+    options: &LayoutOptions,
 ) -> Result<Layout, UiError> {
     let clip = validate_layout(viewport, bounds, clip)?;
     if snapshot.composition == Composition::Demo && !options.submit_control {
@@ -1115,7 +1128,7 @@ fn embedded_layout(
     viewport: Viewport,
     bounds: Rect,
     clip: Rect,
-    options: LayoutOptions,
+    options: &LayoutOptions,
 ) -> Result<Layout, UiError> {
     let singleton = |id| WidgetRef {
         id,

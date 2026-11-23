@@ -15,9 +15,10 @@ C/SDL and browser hosts. A broader widget catalog follows real consumer needs.
 3. Qualify all three hosts with actual rendering and input. C ABI compilation,
    Rust tests and browser boundary tests are necessary but do not establish OS
    IME, accessibility or a complete application integration by themselves.
-4. Publish `tilewright-ui`, `tilewright-app` and `tilewright-ui-render` at
-   `0.1.0` once their packaged graph, licensing and supported-host evidence are
-   verified (see [the release plan](RELEASES.md)). The C facade stays
+4. `tilewright-ui`, `tilewright-app` and `tilewright-ui-render` were
+   published at `0.1.0` on 2026-11-23 (UTC), once their packaged graph,
+   licensing and supported-host evidence were verified (see
+   [the release plan](RELEASES.md)). The C facade stays
    unpublished; C library/header release compatibility is separate from Rust
    package versioning.
 

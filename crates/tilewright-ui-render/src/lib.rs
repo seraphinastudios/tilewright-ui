@@ -154,11 +154,14 @@ impl TextGeometry {
 /// [`TextGeometry::step_caret`] decides whether a change of affinity alone
 /// moved the caret: 1/64 px.
 ///
-/// The rounding it absorbs is a few units in the last place of an `f32`
-/// coordinate (97.700005 against 97.7 at 20 px is 8e-6 px), which stays below
-/// 1/64 px for any coordinate under 131072 px. A genuine direction boundary
-/// puts its two stops at least one glyph advance apart, whole pixels, and
-/// 1/64 logical px is under 1/16 of a physical pixel at any scale up to 4.
+/// The rounding it absorbs is a few units in the last place (ULPs) of an
+/// `f32` coordinate: 97.700005 against 97.7 at 20 px is 8e-6 px. One ULP stays
+/// below 1/64 px for any coordinate under 131072 px; three ULPs reach it near
+/// 65536 px. On text that long the rule can miss the rounding and falls back
+/// to the 0.1.0 behaviour, one press that does nothing; it never swallows a
+/// real stop. A genuine direction boundary puts its two stops at least one
+/// glyph advance apart, whole pixels, and 1/64 logical px is under 1/16 of a
+/// physical pixel at any scale up to 4.
 const SAME_CARET_POSITION: f32 = 1.0 / 64.0;
 
 /// Layout steps one [`TextGeometry::step_caret`] call may take. One

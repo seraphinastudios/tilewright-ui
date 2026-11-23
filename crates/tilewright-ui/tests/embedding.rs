@@ -223,12 +223,12 @@ fn an_embedded_layout_without_its_submit_control_keeps_everything_else() {
                 viewport,
                 bounds,
                 bounds,
-                LayoutOptions::default()
+                &LayoutOptions::default()
             )
             .unwrap(),
             full
         );
-        let layout = layout_in_with(&snapshot, viewport, bounds, bounds, bare).unwrap();
+        let layout = layout_in_with(&snapshot, viewport, bounds, bounds, &bare).unwrap();
         let submit_paint = |layout: &Layout| {
             layout
                 .paint
@@ -264,7 +264,7 @@ fn an_embedded_layout_without_its_submit_control_keeps_everything_else() {
     }
     let demo = Ui::new(Limits::default()).unwrap();
     assert_eq!(
-        layout_in_with(&demo.snapshot(), viewport, bounds, bounds, bare),
+        layout_in_with(&demo.snapshot(), viewport, bounds, bounds, &bare),
         Err(UiError::InvalidInput)
     );
 }
@@ -283,6 +283,18 @@ fn composer_accessors_read_the_current_state_without_a_snapshot() {
     };
     check(&ui);
     assert_eq!(ui.composer_text(), "a\nb");
+    // A selection whose anchor and focus differ.
+    let selection = TextSelection {
+        anchor: TextCursor::new(3),
+        focus: TextCursor::new(1),
+    };
+    ui.apply(Input::Selection {
+        target: ui.text_target().unwrap(),
+        selection,
+    })
+    .unwrap();
+    check(&ui);
+    assert_eq!(ui.composer_selection(), selection);
     let target = ui.text_target().unwrap();
     ui.apply(Input::Preedit {
         target,
@@ -301,7 +313,8 @@ fn composer_accessors_read_the_current_state_without_a_snapshot() {
     .unwrap();
     check(&ui);
     assert!(!ui.is_composing());
-    assert_eq!(ui.composer_text(), "a\nbc");
+    // The commit replaced the selected stored break.
+    assert_eq!(ui.composer_text(), "ac");
     // The revision is readable unfocused, where `text_target` is `None`.
     ui.apply(Input::Focus(None)).unwrap();
     assert!(ui.text_target().is_none());

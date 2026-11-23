@@ -1,7 +1,7 @@
 # Package and release plan
 
 Three crates are on crates.io: `tilewright-ui`, `tilewright-app` and
-`tilewright-ui-render`, first published at `0.1.0` on 2026-11-22 under the
+`tilewright-ui-render`, first published at `0.1.0` on 2026-11-23 (UTC) under the
 owner's approval of 2026-11-17. They set `publish = ["crates-io"]`, and every
 other package `publish = false`. Releases and publication run as
 [RELEASING.md](RELEASING.md) describes; the owner's one-time first-publication
@@ -40,7 +40,10 @@ Windows.
 ## Crate versions
 
 What each crate version changes for a host, newest first. Every entry keeps
-the renderer at `0.7.2` and the C ABI and header as they were.
+the renderer at `0.7.2` and the C ABI and header as they were. Source release
+tags (`vX.Y.Z`) and crate versions are numbered separately; each release's
+notes say which crate version it owns (crate 0.1.1 is owned by the first
+release cut after it merges).
 
 ### 0.1.1
 

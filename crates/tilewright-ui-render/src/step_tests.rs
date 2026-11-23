@@ -139,6 +139,22 @@ fn step_visual_steps_past_an_affinity_only_move_that_stays_in_place() {
     let cursor = step_visual(&snapshot, step, apart).unwrap();
     assert_eq!((cursor.byte, cursor.affinity), (1, TextAffinity::Before));
     assert_eq!(calls, 1);
+
+    // The same x on another line is another place too: y counts.
+    let mut calls = 0;
+    let step = |cursor: TextCursor| {
+        calls += 1;
+        flip(cursor)
+    };
+    let lines = |cursor: TextCursor| {
+        Some(match cursor.affinity {
+            TextAffinity::After => [97.7, 4.0],
+            TextAffinity::Before => [97.7, 26.0],
+        })
+    };
+    let cursor = step_visual(&snapshot, step, lines).unwrap();
+    assert_eq!((cursor.byte, cursor.affinity), (1, TextAffinity::Before));
+    assert_eq!(calls, 1);
 }
 
 #[test]

@@ -20,9 +20,16 @@ architecture, the interaction contract and the native, C and browser examples.
 
 `layout_in` lays out an embedded panel with its submit control (Apply in
 `SingleField`, Send in `ChatPanel`). A host with its own control calls
-`layout_in_with` with `LayoutOptions { submit_control: false, .. }` (built from
-`LayoutOptions::default()`): the composer takes the whole inner width, and the
-host submits with `Input::Activate(SUBMIT)` or Enter.
+`layout_in_with` with options whose `submit_control` is `false`: the composer
+takes the whole inner width, and the host submits with
+`Input::Activate(SUBMIT)` or Enter. `LayoutOptions` is `#[non_exhaustive]`, so
+start from its default (the `LayoutOptions` doc test runs this):
+
+```rust,ignore
+let mut options = LayoutOptions::default();
+options.submit_control = false;
+let layout = layout_in_with(&ui.snapshot(), viewport, bounds, clip, &options)?;
+```
 
 ## Status
 
