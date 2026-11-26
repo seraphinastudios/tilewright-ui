@@ -9,6 +9,9 @@ use tilewright_ui::{TextAffinity, TextCursor, TextInput, TextSelection, UiError}
 
 const LIMIT: usize = 4096;
 
+/// The direction of a Left press, which every synthetic stepper below takes.
+const LEFT: f32 = -1.0;
+
 fn open(text: &str) -> TextInput {
     TextInput::new(text.into(), LIMIT).unwrap()
 }
@@ -69,6 +72,7 @@ fn step_visual_repeats_a_step_that_only_crosses_a_guard() {
         &snapshot,
         stepper(&[0, 1, 4, 7, 9], TextAffinity::Before, &mut calls),
         distinct,
+        LEFT,
     )
     .unwrap();
     assert_eq!(cursor.byte, 1);
@@ -97,6 +101,7 @@ fn step_visual_repeats_a_stop_beside_a_guard_that_lands_behind() {
                     distinct(cursor).unwrap()
                 })
             },
+            LEFT,
         )
         .unwrap();
         (cursor.byte, calls)
@@ -129,7 +134,7 @@ fn step_visual_returns_an_affinity_only_move_to_another_place_at_once() {
             TextAffinity::After => [17.0, 0.0],
         })
     };
-    let cursor = step_visual(&snapshot, step, apart).unwrap();
+    let cursor = step_visual(&snapshot, step, apart, LEFT).unwrap();
     assert_eq!(cursor.byte, 1);
     assert_eq!(cursor.affinity, TextAffinity::Before);
     assert_eq!(calls, 1);
@@ -157,7 +162,7 @@ fn step_visual_steps_past_an_affinity_only_move_that_stays_in_place() {
             _ => [88.0, 4.0],
         })
     };
-    let cursor = step_visual(&snapshot, step, noise).unwrap();
+    let cursor = step_visual(&snapshot, step, noise, LEFT).unwrap();
     assert_eq!(cursor, TextCursor::new(0));
     assert_eq!(calls, 2);
 
@@ -173,7 +178,7 @@ fn step_visual_steps_past_an_affinity_only_move_that_stays_in_place() {
             TextAffinity::Before => [97.7, 4.0],
         })
     };
-    let cursor = step_visual(&snapshot, step, apart).unwrap();
+    let cursor = step_visual(&snapshot, step, apart, LEFT).unwrap();
     assert_eq!((cursor.byte, cursor.affinity), (1, TextAffinity::Before));
     assert_eq!(calls, 1);
 
@@ -189,7 +194,7 @@ fn step_visual_steps_past_an_affinity_only_move_that_stays_in_place() {
             TextAffinity::Before => [97.7, 26.0],
         })
     };
-    let cursor = step_visual(&snapshot, step, lines).unwrap();
+    let cursor = step_visual(&snapshot, step, lines, LEFT).unwrap();
     assert_eq!((cursor.byte, cursor.affinity), (1, TextAffinity::Before));
     assert_eq!(calls, 1);
 }
@@ -209,6 +214,7 @@ fn step_visual_is_bounded_and_stops_at_a_fixed_point() {
             flip(cursor)
         },
         |_| Some([5.0, 0.0]),
+        LEFT,
     )
     .unwrap();
     assert_eq!(cursor.byte, 1);
@@ -222,6 +228,7 @@ fn step_visual_is_bounded_and_stops_at_a_fixed_point() {
             flip(cursor)
         },
         |_| None,
+        LEFT,
     )
     .unwrap();
     assert_eq!(calls, 1);
@@ -239,6 +246,7 @@ fn step_visual_stops_at_a_fixed_point_and_refuses_composition() {
             cursor
         },
         distinct,
+        LEFT,
     )
     .unwrap();
     assert_eq!(cursor, snapshot.selection.focus);
@@ -254,6 +262,7 @@ fn step_visual_stops_at_a_fixed_point_and_refuses_composition() {
                 cursor
             },
             distinct,
+            LEFT,
         ),
         Err(UiError::InvalidInput)
     );
@@ -265,7 +274,9 @@ fn step_visual_stops_at_a_fixed_point_and_refuses_composition() {
 /// at the composer's size), and compared with the 0.1.0 loop.
 #[cfg(feature = "prototype")]
 mod shaped {
-    use super::super::{SAME_CARET_POSITION as SAME, neutral_cursor, renderer_cursor, step_visual};
+    use super::super::{
+        SAME_CARET_POSITION as SAME, neutral_cursor, renderer_cursor, step_visual, toward,
+    };
     use super::LIMIT;
     use crate::{TextLimits, TextSystem, UnicodeLayout, VisualMotion};
     use tilewright_ui::{TextCursor, TextInput, TextInputSnapshot, TextSelection, UiError};
@@ -351,11 +362,16 @@ mod shaped {
             let cursor = if released {
                 released_step(&snapshot, step)
             } else {
-                step_visual(&snapshot, step, |cursor| {
-                    layout
-                        .caret(renderer_cursor(cursor))
-                        .map(|rect| [rect.x, rect.y])
-                })
+                step_visual(
+                    &snapshot,
+                    step,
+                    |cursor| {
+                        layout
+                            .caret(renderer_cursor(cursor))
+                            .map(|rect| [rect.x, rect.y])
+                    },
+                    toward(motion),
+                )
             }
             .unwrap();
             self.place(cursor).unwrap();
@@ -493,6 +509,128 @@ mod shaped {
                     "{size} {motion:?}"
                 );
             }
+        }
+    }
+
+    /// One press of `motion` from committed `byte` with `affinity`: the
+    /// new focus, and the drawn x before and after.
+    fn press_from(
+        field: &mut Field,
+        byte: usize,
+        affinity: tilewright_ui::TextAffinity,
+        motion: VisualMotion,
+    ) -> (TextCursor, f32, f32) {
+        field.place(TextCursor { byte, affinity }).unwrap();
+        let before = field.drawn().unwrap()[0];
+        let cursor = field.press(motion, false);
+        (cursor, before, field.drawn().unwrap()[0])
+    }
+
+    /// A stop beside a guard that is drawn at the press's start, but whose
+    /// committed position lies the pressed way, is kept: 0.1.2 moved there,
+    /// and so does this loop.
+    #[test]
+    fn a_stop_beside_a_guard_whose_edge_lies_the_pressed_way_is_kept() {
+        use tilewright_ui::TextAffinity::{After, Before};
+        let mut system = system();
+        for (value, size, byte, affinity, expected) in [
+            (
+                "\u{10ffff}\u{ac00}\u{644}\u{627}\u{6dd}\u{85}\u{200c}\u{e01}\u{e33}\u{202a}",
+                18.0,
+                7,
+                After,
+                13,
+            ),
+            (
+                "\u{300}\u{661}\u{662}  \u{c}\r\u{8e2}\u{85}",
+                20.0,
+                6,
+                Before,
+                13,
+            ),
+        ] {
+            let mut field = Field::open(&mut system, value, size).unwrap();
+            let (cursor, before, after) =
+                press_from(&mut field, byte, affinity, VisualMotion::Left);
+            assert_eq!(cursor.byte, expected, "{value:?} {size}");
+            assert!(after < before, "{value:?} {size}: x {before} to {after}");
+            assert_eq!(
+                (cursor, before, after),
+                {
+                    field.place(TextCursor { byte, affinity }).unwrap();
+                    let released = field.press(VisualMotion::Left, true);
+                    (released, before, field.drawn().unwrap()[0])
+                },
+                "{value:?} {size}: as the 0.1.0 loop"
+            );
+        }
+    }
+
+    /// A stop beside a guard drawn at the press's start whose committed
+    /// position lies behind it is not kept: stopping there moved the caret
+    /// right on a Left press.
+    #[test]
+    fn a_stop_beside_a_guard_drawn_at_the_start_with_its_edge_behind_is_skipped() {
+        let value = "\u{2067}\u{5e9}\u{5dc}\u{603}\r\u{2028}\u{202b},";
+        let mut system = system();
+        let mut field = Field::open(&mut system, value, 18.0).unwrap();
+        let (cursor, before, after) = press_from(
+            &mut field,
+            7,
+            tilewright_ui::TextAffinity::After,
+            VisualMotion::Left,
+        );
+        assert!(
+            after < before,
+            "Left went right: x {before} to {after}, {cursor:?}"
+        );
+    }
+
+    /// After a stop beside a guard is passed over, the guard-crossing check
+    /// compares with the position the step left. Compared with the press's
+    /// start, Left from 7 would pass over 7 (Before) to 3.
+    #[test]
+    fn the_guard_crossing_check_compares_with_the_position_the_step_left() {
+        let value = "\u{600}\n\u{600}\u{301}a";
+        let mut system = system();
+        let mut field = Field::open(&mut system, value, 18.0).unwrap();
+        let (cursor, before, after) = press_from(
+            &mut field,
+            7,
+            tilewright_ui::TextAffinity::After,
+            VisualMotion::Left,
+        );
+        assert_eq!(
+            cursor,
+            TextCursor {
+                byte: 7,
+                affinity: tilewright_ui::TextAffinity::Before
+            }
+        );
+        assert!(after < before);
+        assert_eq!(field.press(VisualMotion::Left, false).byte, 3);
+    }
+
+    /// A stop beside a guard drawn at its own committed position's place is
+    /// kept, so every position stays reachable by the arrows.
+    #[test]
+    fn a_stop_beside_a_guard_drawn_at_its_edge_keeps_its_position_reachable() {
+        let value = "\u{604}\u{2028}\u{200c}\u{661}\u{662}\r\n\u{70f}\u{1}\u{1f1fa}\u{1f1e6}";
+        let mut system = system();
+        for size in [12.0, 24.0] {
+            let mut field = Field::open(&mut system, value, size).unwrap();
+            let mut reached = Vec::new();
+            for byte in field.boundaries() {
+                for affinity in [
+                    tilewright_ui::TextAffinity::Before,
+                    tilewright_ui::TextAffinity::After,
+                ] {
+                    for motion in [VisualMotion::Left, VisualMotion::Right] {
+                        reached.push(press_from(&mut field, byte, affinity, motion).0.byte);
+                    }
+                }
+            }
+            assert!(reached.contains(&5), "{size}: committed 5 unreachable");
         }
     }
 

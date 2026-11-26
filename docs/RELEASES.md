@@ -60,14 +60,17 @@ next to a stored-break marker's guard in mixed-direction text.
   and in a right-to-left paragraph the edge can be drawn far from the inner
   position. In `RLM กำ b U+0600 U+2028 U+0300 가`, End then Left visited
   12, 10, 9, 12, 10, ... for ever: Left from 9 put the caret at the right
-  end. A layout stop inside a marker unit that would draw the caret back
-  where the press began, or behind it, is now not a stop, and the step goes
-  on (Left from 9 now reaches 20, then 17, the left end). Every other press
-  gives the same result as in 0.1.2: on every value of up to four pieces from
-  the step tests' alphabet, and on generated mixed-direction values with
-  combining marks, stored breaks, emoji and direction controls, no press that
-  moved the caret the pressed way in 0.1.2 changes, and no walk of repeated
-  presses cycles (104 cycled in 0.1.2 on the four-piece enumeration).
+  end. A layout stop inside a marker unit, beside its guard, is now not a
+  stop when its committed position is drawn at another place and no further
+  than where the press began in the pressed direction; the step goes on
+  (Left from 9 now reaches 20, then 17, the left end). A press changes only
+  where 0.1.2 moved the caret against the press or left it where it was
+  drawn. On every value of up to five
+  pieces from the step tests' alphabet, and on generated mixed-direction
+  values with combining marks, stored breaks, emoji and direction controls,
+  no press that moved the caret the pressed way in 0.1.2 changes, Home and
+  End do not change, and no walk of repeated Left or Right presses cycles (on
+  the four-piece enumeration at 18 and 20 px, 104 cycled in 0.1.2).
 - `tilewright-ui` and `tilewright-app` change only their version.
 
 ### 0.1.2

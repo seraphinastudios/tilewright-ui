@@ -91,9 +91,9 @@ application frame stamp before pointer selection, visual movement or IME use.
 returns the new focus in committed text, stepping past the zero-width guard of
 a stored-break marker, past a change of affinity alone that leaves the
 caret drawn within 1/64 logical pixel of where it was (two stops a rounding
-error apart are one place), and past a stop beside a guard that would draw
-the caret back where the press began or behind it, as mixed-direction text
-can (see `docs/CONTRACT.md`, Single-line text).
+error apart are one place), and past a stop beside a guard whose committed
+position is drawn elsewhere, back where the press began or behind it, as
+mixed-direction text can (see `docs/CONTRACT.md`, Single-line text).
 The composer's text is shaped and drawn with the layout's
 `tilewright_ui::FieldStyle` (`Layout::field_style`): its text size, padding,
 and selection, caret and underline colours; the default is 20 px with no
