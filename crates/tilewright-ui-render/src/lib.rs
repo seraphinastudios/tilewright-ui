@@ -174,7 +174,10 @@ const SAME_CARET_POSITION: f32 = 1.0 / 64.0;
 /// Layout steps one [`TextGeometry::step_caret`] call may take. One
 /// committed position has at most two display positions (beside a marker's
 /// guard), each with at most two affinities, so three steps can stay on it
-/// and the fourth leaves it.
+/// and the fourth leaves it. Since 0.1.3 a press can also step past stops
+/// beside a guard on other committed positions; on the measured values it
+/// passes at most two, after an affinity-only step, and no press needed more
+/// than four steps. A press cut off by the bound would end on such a stop.
 const MAXIMUM_STEPS: usize = 4;
 
 /// The direction in x a motion presses toward: -1 for Left and Home, 1 for
