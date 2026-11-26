@@ -14,9 +14,9 @@ through a committed registry-only `Cargo.lock`.
 
 | Package | Direct shared-library dependencies | crates.io |
 | --- | --- | --- |
-| `tilewright-ui` | Unicode segmentation | Published, `0.1.0` and `0.1.1`; `0.1.2` with the release that owns it |
-| `tilewright-app` | `tilewright-ui` | Published, `0.1.0` and `0.1.1`; `0.1.2` with the release that owns it |
-| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.7.2` APIs | Published, `0.1.0` and `0.1.1`; `0.1.2` with the release that owns it |
+| `tilewright-ui` | Unicode segmentation | Published, `0.1.0` to `0.1.2`; `0.1.3` with the release that owns it |
+| `tilewright-app` | `tilewright-ui` | Published, `0.1.0` to `0.1.2`; `0.1.3` with the release that owns it |
+| `tilewright-ui-render` | `tilewright-ui`, released renderer `0.7.2` APIs | Published, `0.1.0` to `0.1.2`; `0.1.3` with the release that owns it |
 | `tilewright-ui-ffi` | `tilewright-ui`, `tilewright-app`; optional UI renderer | Not published; the C library and header are a separate track |
 
 The native demo (`tilewright-ui-native-demo`) and the browser adapter
@@ -43,8 +43,35 @@ What each crate version changes for a host, newest first. Every entry keeps
 the renderer at `0.7.2` and the C ABI and header as they were. Source release
 tags (`vX.Y.Z`) and crate versions are numbered separately; each release's
 notes say which crate version it owns: `v0.1.0` owns crate 0.1.0 and
-`v0.2.0` owns crate 0.1.1; crate 0.1.2 is owned by the source release cut by
-merging the change that introduced it.
+`v0.2.0` owns crate 0.1.1, and `v0.3.0` owns crate 0.1.2; crate 0.1.3 is owned
+by the source release cut by merging the change that introduced it.
+
+### 0.1.3
+
+A patch release: nothing is removed or changed in meaning, so a host on 0.1.2
+can move to `=0.1.3` (all three crates together) without code changes. Only
+`TextGeometry::step_caret` (and the C `twui_move_visual`) changes, and only
+next to a stored-break marker's guard in mixed-direction text.
+
+- **Caret steps beside a marker's guard go the pressed way**
+  (`tilewright-ui-render`). A guard gives one committed position two display
+  positions, and the layout can stop at the inner one, beside the glyph.
+  That position maps to the committed position at the marker unit's edge,
+  and in a right-to-left paragraph the edge can be drawn far from the inner
+  position. In `RLM กำ b U+0600 U+2028 U+0300 가`, End then Left visited
+  12, 10, 9, 12, 10, ... for ever: Left from 9 put the caret at the right
+  end. A layout stop inside a marker unit, beside its guard, is now not a
+  stop when its committed position is drawn at another place and no further
+  than where the press began in the pressed direction; the step goes on
+  (Left from 9 now reaches 20, then 17, the left end). A press changes only
+  where 0.1.2 moved the caret against the press or left it where it was
+  drawn. On every value of up to five
+  pieces from the step tests' alphabet, and on generated mixed-direction
+  values with combining marks, stored breaks, emoji and direction controls,
+  no press that moved the caret the pressed way in 0.1.2 changes, Home and
+  End do not change, and no walk of repeated Left or Right presses cycles (on
+  the four-piece enumeration at 18 and 20 px, 104 cycled in 0.1.2).
+- `tilewright-ui` and `tilewright-app` change only their version.
 
 ### 0.1.2
 

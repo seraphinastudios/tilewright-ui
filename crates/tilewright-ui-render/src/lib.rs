@@ -122,9 +122,15 @@ impl TextGeometry {
     /// is repeated: the layout can give one position two caret stops that
     /// differ only by floating-point rounding. A step that moves the affinity
     /// alone to a visibly different place is a real visual stop at a direction
-    /// boundary and is returned at once, as is a step that does not move. One
-    /// call takes at most four layout steps. In some mixed-direction text a
-    /// guard can still make the caret alternate between two positions.
+    /// boundary and is returned at once, as is a step that does not move.
+    /// Nor is a step to a display position inside a marker unit, beside its
+    /// guard, whose committed position is drawn at another place and not
+    /// beyond where the press began in the pressed direction (since 0.1.3):
+    /// the committed position is drawn at the unit's edge, not at that inner
+    /// position, and in mixed-direction text the two can be far apart, so
+    /// stopping there moved the caret against the press, or not at all, and
+    /// could make presses cycle. It is repeated too. One call takes at most
+    /// four layout steps.
     ///
     /// Fails with `UiError::InvalidInput`, without stepping, while a
     /// composition is active or when this text is not the editable one
@@ -145,6 +151,7 @@ impl TextGeometry {
                     .caret(renderer_cursor(cursor))
                     .map(|rect| [rect.x, rect.y])
             },
+            toward(motion),
         )
     }
 }
@@ -167,23 +174,36 @@ const SAME_CARET_POSITION: f32 = 1.0 / 64.0;
 /// Layout steps one [`TextGeometry::step_caret`] call may take. One
 /// committed position has at most two display positions (beside a marker's
 /// guard), each with at most two affinities, so three steps can stay on it
-/// and the fourth leaves it.
+/// and the fourth leaves it. Since 0.1.3 a press can also step past stops
+/// beside a guard on other committed positions; on the measured values it
+/// passes at most two, and no press needed more than four steps. A press cut off by the bound would end on such a stop.
 const MAXIMUM_STEPS: usize = 4;
 
+/// The direction in x a motion presses toward: -1 for Left and Home, 1 for
+/// Right and End.
+fn toward(motion: VisualMotion) -> f32 {
+    match motion {
+        VisualMotion::Left | VisualMotion::Home => -1.0,
+        VisualMotion::Right | VisualMotion::End => 1.0,
+    }
+}
+
 /// The stepping loop behind [`TextGeometry::step_caret`]. `step` moves a
-/// display cursor one position and `caret` gives a display cursor's caret
-/// position; tests drive both with synthetic layouts.
+/// display cursor one position, `caret` gives a display cursor's caret
+/// position and `toward` is the press's direction in x ([`toward`]); tests
+/// drive them with synthetic layouts.
 fn step_visual(
     snapshot: &TextInputSnapshot,
     mut step: impl FnMut(tilewright_ui::TextCursor) -> tilewright_ui::TextCursor,
     caret: impl Fn(tilewright_ui::TextCursor) -> Option<[f32; 2]>,
+    toward: f32,
 ) -> Result<tilewright_ui::TextCursor, tilewright_ui::UiError> {
     if snapshot.composition.is_some() {
         return Err(tilewright_ui::UiError::InvalidInput);
     }
-    let start = snapshot.selection.focus;
     let mut display = snapshot.display_selection.focus;
-    let mut result = start;
+    let from = caret(display);
+    let mut result = snapshot.selection.focus;
     for _ in 0..MAXIMUM_STEPS {
         let next = step(display);
         if next == display {
@@ -192,15 +212,59 @@ fn step_visual(
         let moved = next.byte != display.byte;
         let unseen = !moved && same_position(caret(display), caret(next));
         display = next;
+        let previous = result;
         result = snapshot.committed_cursor(display)?;
-        if unseen {
+        if unseen || lands_behind(snapshot, from, display, &caret, toward) {
             continue;
         }
-        if result.byte != start.byte || !moved {
+        // The display byte moved but the committed byte did not: the step
+        // only crossed a guard. Compared with the position the step left,
+        // which is the press's start unless a stop beside a guard was
+        // passed over.
+        if result.byte != previous.byte || !moved {
             break;
         }
     }
     Ok(result)
+}
+
+/// Whether a press toward `toward` (-1 left, 1 right) that began with the
+/// caret drawn at `from` and whose layout steps reached `cursor` would, by
+/// stopping there, draw the caret back at `from` or behind it.
+///
+/// Only a display position strictly inside a marker unit (beside its guard)
+/// can: `committed_cursor` maps it to the stored character's edge on the same
+/// side of the glyph, which is drawn at the unit's edge on that side, not at
+/// `cursor`. When the edge is drawn at `cursor`'s place, or a position has no
+/// caret, this is false. Otherwise it is true unless the edge lies more than
+/// [`SAME_CARET_POSITION`] beyond `from` in x, the pressed way; where
+/// `cursor` itself is drawn does not matter.
+fn lands_behind(
+    snapshot: &TextInputSnapshot,
+    from: Option<[f32; 2]>,
+    cursor: tilewright_ui::TextCursor,
+    caret: impl Fn(tilewright_ui::TextCursor) -> Option<[f32; 2]>,
+    toward: f32,
+) -> bool {
+    let Some(marker) = snapshot
+        .markers
+        .iter()
+        .find(|marker| marker.display.start < cursor.byte && cursor.byte < marker.display.end)
+    else {
+        return false;
+    };
+    let edge = tilewright_ui::TextCursor {
+        byte: if cursor.byte <= marker.glyph.start {
+            marker.display.start
+        } else {
+            marker.display.end
+        },
+        ..cursor
+    };
+    let (Some(from), Some(stop), Some(edge)) = (from, caret(cursor), caret(edge)) else {
+        return false;
+    };
+    !same_position(Some(stop), Some(edge)) && (edge[0] - from[0]) * toward <= SAME_CARET_POSITION
 }
 
 /// Whether two caret positions are the same drawn position; a cursor with
