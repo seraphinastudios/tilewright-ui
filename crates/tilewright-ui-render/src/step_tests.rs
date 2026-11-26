@@ -76,6 +76,43 @@ fn step_visual_repeats_a_step_that_only_crosses_a_guard() {
 }
 
 #[test]
+fn step_visual_repeats_a_stop_beside_a_guard_that_lands_behind() {
+    // U+0600, guard, "⏎": display stops 0, 2, 5 (inside the guard), 8. The
+    // layout steps Left from 8 (drawn at x 80) to 5 (x 50), then to 0. 5
+    // maps to committed 2, drawn where display 2 is.
+    let mut input = open("\u{600}\n");
+    caret(&mut input, 3);
+    let snapshot = input.snapshot();
+    assert_eq!(snapshot.display_selection.focus.byte, 8);
+    assert_eq!(snapshot.markers[0].display, 2..8);
+    let press = |two: f32| {
+        let mut calls = 0;
+        let cursor = step_visual(
+            &snapshot,
+            stepper(&[0, 5, 8], TextAffinity::Before, &mut calls),
+            |cursor| {
+                Some(if cursor.byte == 2 {
+                    [two, 0.0]
+                } else {
+                    distinct(cursor).unwrap()
+                })
+            },
+        )
+        .unwrap();
+        (cursor.byte, calls)
+    };
+    // Display 2 drawn right of where the press began (as in a right-to-left
+    // paragraph): stopping at 5 would draw the caret behind it. Not a stop.
+    assert_eq!(press(90.0), (0, 2));
+    // At the start's own place: not a stop either.
+    assert_eq!(press(80.0), (0, 2));
+    // Drawn at 5's place (the guard has no width there), or beyond the
+    // start the way the press went: a stop, as before.
+    assert_eq!(press(50.0), (2, 1));
+    assert_eq!(press(20.0), (2, 1));
+}
+
+#[test]
 fn step_visual_returns_an_affinity_only_move_to_another_place_at_once() {
     // A direction boundary: same byte, other affinity, drawn elsewhere.
     let mut input = open("ab");
@@ -228,7 +265,7 @@ fn step_visual_stops_at_a_fixed_point_and_refuses_composition() {
 /// at the composer's size), and compared with the 0.1.0 loop.
 #[cfg(feature = "prototype")]
 mod shaped {
-    use super::super::{neutral_cursor, renderer_cursor, step_visual};
+    use super::super::{SAME_CARET_POSITION as SAME, neutral_cursor, renderer_cursor, step_visual};
     use super::LIMIT;
     use crate::{TextLimits, TextSystem, UnicodeLayout, VisualMotion};
     use tilewright_ui::{TextCursor, TextInput, TextInputSnapshot, TextSelection, UiError};
@@ -404,6 +441,61 @@ mod shaped {
         );
     }
 
+    /// A marker's guard beside right-to-left text. In
+    /// `RLM กำ b U+0600 U+2028 U+0300 가` (a right-to-left paragraph) End then
+    /// Left cycled 12, 10, 9, 12 for ever: from 9 the layout steps to the
+    /// guard's inner side, drawn to the left, which maps to committed 12,
+    /// drawn at the right end. Every press now moves the caret the pressed
+    /// way until it stays at that end.
+    #[test]
+    fn a_guard_beside_right_to_left_text_does_not_cycle() {
+        let value = "\u{200f}\u{e01}\u{e33}b\u{600}\u{2028}\u{300}\u{ac00}";
+        let mut system = system();
+        for size in [18.0, 20.0] {
+            let mut field = Field::open(&mut system, value, size).unwrap();
+            field.press(VisualMotion::End, false);
+            assert_eq!(field.focus().byte, 12);
+            assert_eq!(
+                bytes(&mut field, 12, VisualMotion::Left, true)[..4],
+                [10, 9, 12, 10],
+                "the 0.1.0 loop cycled"
+            );
+            for (start, motion) in [
+                (VisualMotion::End, VisualMotion::Left),
+                (VisualMotion::Home, VisualMotion::Right),
+            ] {
+                field.press(start, false);
+                let mut visited = vec![field.focus()];
+                loop {
+                    let before = field.drawn().unwrap();
+                    let cursor = field.press(motion, false);
+                    if cursor == *visited.last().unwrap() {
+                        break;
+                    }
+                    let after = field.drawn().unwrap();
+                    let moved = if motion == VisualMotion::Left {
+                        after[0] < before[0]
+                    } else {
+                        after[0] > before[0]
+                    };
+                    assert!(moved, "{size} {motion:?} went the other way: {visited:?}");
+                    assert!(!visited.contains(&cursor), "{size} {motion:?}: {visited:?}");
+                    visited.push(cursor);
+                }
+                let walked: Vec<_> = visited.iter().map(|cursor| cursor.byte).collect();
+                assert_eq!(
+                    walked,
+                    if motion == VisualMotion::Left {
+                        &[12, 10, 9, 20, 17][..]
+                    } else {
+                        &[17, 15, 3, 9, 10, 0][..]
+                    },
+                    "{size} {motion:?}"
+                );
+            }
+        }
+    }
+
     pub(super) const ALPHABET: [&str; 9] = [
         "a",
         "\u{5d0}",
@@ -429,6 +521,10 @@ mod shaped {
         /// Of those, presses where the 0.1.0 loop changed only the affinity
         /// and left the caret where it was drawn: removed do-nothing presses.
         pub(super) differing_removed_stall: usize,
+        /// Of those, presses where the 0.1.0 loop stopped beside a marker's
+        /// guard, so the caret stayed where it was drawn or went the other
+        /// way, and the new loop moves it the pressed way.
+        pub(super) differing_wrong_way: usize,
         /// The rest of `differing`; each is suspect and listed by the report.
         pub(super) differing_other: usize,
         /// Presses that leave the caret where it was drawn although pressing
@@ -446,7 +542,8 @@ mod shaped {
         /// two committed positions the layout draws at one place.
         pub(super) stalls_identical: usize,
         /// (ii) States from which the 0.1.0 loop reaches a drawn place that
-        /// the new loop, pressed on from the same state, never reaches.
+        /// the new loop, pressed on from the same state, never reaches; only
+        /// places reached before a press that went against the pressed way.
         pub(super) lost_places: usize,
         /// States whose repeated presses end in a cycle, not a fixed point.
         pub(super) cycles_released: usize,
@@ -491,6 +588,18 @@ mod shaped {
             }
             seen.push(to);
         }
+    }
+
+    /// How far a press from state `a` to state `b` moves the drawn caret
+    /// the way `motion` points (negative: against it).
+    fn shift(drawn: &[Option<[f32; 2]>], motion: VisualMotion, a: usize, b: usize) -> Option<f32> {
+        drawn[a].zip(drawn[b]).map(|(a, b)| {
+            if motion == VisualMotion::Left {
+                a[0] - b[0]
+            } else {
+                b[0] - a[0]
+            }
+        })
     }
 
     fn count_value(system: &mut TextSystem, value: &str, size: f32, counts: &mut Counts) {
@@ -554,10 +663,14 @@ mod shaped {
                 counts.stalls_affinity_only += usize::from(new_stall && affinity_only(&new));
                 counts.stalls_identical +=
                     usize::from(new_stall && drawn[from] == drawn[new[from]]);
+                let shift = |a: usize, b: usize| shift(&drawn, motion, a, b);
+                let pressed_way = |to: usize| shift(from, to).is_some_and(|shift| shift > SAME);
                 if old[from] != new[from] {
                     counts.differing += 1;
                     if affinity_only(&old) && same(drawn[from], drawn[old[from]]) {
                         counts.differing_removed_stall += 1;
+                    } else if !pressed_way(old[from]) && pressed_way(new[from]) {
+                        counts.differing_wrong_way += 1;
                     } else {
                         counts.differing_other += 1;
                         counts.suspects.push(format!(
@@ -566,7 +679,15 @@ mod shaped {
                         ));
                     }
                 }
-                if old_walk.iter().any(|place| {
+                // Only places the 0.1.0 loop reaches before a press that
+                // went against the pressed way count: one past such a press
+                // (beside a guard in mixed-direction text, removed in 0.1.3)
+                // is not where pressing on is meant to go.
+                let reach = old_walk
+                    .windows(2)
+                    .position(|pair| shift(pair[0], pair[1]).is_some_and(|shift| shift < -SAME))
+                    .map_or(old_walk.len(), |at| at + 1);
+                if old_walk[..reach].iter().any(|place| {
                     !new_walk
                         .iter()
                         .any(|reached| same(drawn[*place], drawn[*reached]))
@@ -587,13 +708,14 @@ mod shaped {
         assert_eq!(counts.stalls_affinity_only, 0, "{counts:#?}");
         assert_eq!(counts.differing_other, 0, "{counts:#?}");
         assert_eq!(counts.lost_places, 0, "{counts:#?}");
-        assert!(counts.cycles <= counts.cycles_released, "{counts:#?}");
+        assert_eq!(counts.cycles, 0, "{counts:#?}");
         assert!(counts.most_steps <= super::super::MAXIMUM_STEPS);
     }
 
     /// Every value up to three pieces long: the new loop never does nothing
     /// where the 0.1.0 loop moved, changes no press except to remove a
-    /// press that did nothing, loses no drawn place and adds no cycle.
+    /// press that did nothing or went against the pressed way, loses no
+    /// drawn place and never cycles.
     #[test]
     fn small_alphabet_enumeration_keeps_every_place() {
         check(&enumerate(3));
